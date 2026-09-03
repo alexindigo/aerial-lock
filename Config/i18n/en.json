@@ -1,0 +1,9 @@
+{
+  "prompt": "Enter password",
+  "authenticating": "Authenticating...",
+  "authFailed": "Authentication failed",
+  "maxTries": "Too many attempts",
+  "authError": "Authentication error",
+  "unlocked": "Unlocked",
+  "dismissDebug": "Dismiss (debug)"
+}

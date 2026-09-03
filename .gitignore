@@ -1,0 +1,18 @@
+# Quickshell
+__quickshell_cache/
+*.qsbuild
+
+# Build artifacts
+Config/pam-limits.json
+gen-pam-limits.tmp
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

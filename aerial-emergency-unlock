@@ -1,0 +1,146 @@
+#!/bin/bash
+# aerial-emergency-unlock — recovery tool for stuck aerial-lock sessions
+#
+# Usage:
+#   aerial-emergency-unlock          Soft mode: attempt lock takeover without
+#                                    killing aerial-lock. If compositor allows
+#                                    takeover, the lock is released.
+#   aerial-emergency-unlock --purge  Hard mode: kill aerial-lock first, then
+#                                    take over the stuck compositor lock.
+#   aerial-emergency-unlock --help   Show this message.
+#
+# Works from TTY by auto-detecting the Wayland display socket.
+
+set -u
+
+NAME="aerial-emergency-unlock"
+QML_PATH="/home/user/Projects/aerial-lock/EmergencyUnlock.qml"
+LOG_PATH="/tmp/aerial-emergency-unlock.out"
+
+# Auto-detect Wayland display (needed when run from TTY/console).
+RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -d "$RUNTIME" ]; then
+    if [ -S "$RUNTIME/wayland-1" ]; then
+        export WAYLAND_DISPLAY=wayland-1
+        export XDG_RUNTIME_DIR="$RUNTIME"
+    fi
+fi
+
+PURGE=0
+for arg in "$@"; do
+    case "$arg" in
+        --purge)
+            PURGE=1
+            ;;
+        --help|-h)
+            cat <<'EOF'
+Usage: aerial-emergency-unlock [--purge]
+
+  Recovery tool for stuck ext-session-lock-v1 sessions.
+  Works from a TTY by auto-detecting the Wayland display.
+
+  Without --purge (soft mode):
+    Attempts to take over the compositor lock without touching aerial-lock.
+    Works when aerial-lock has crashed and left the compositor stuck.
+
+  With --purge (hard mode):
+    Kills any running aerial-lock process first, then takes over.
+    Use when aerial-lock is still running but unresponsive.
+
+  Output is logged to /tmp/aerial-emergency-unlock.out.
+
+  Manual recovery fallbacks:
+    1. Ctrl+Alt+F2 → login → pkill -f 'qs -p.*aerial-lock'
+    2. Launch a working locker (swaylock-plugin) and dismiss it
+EOF
+            exit 0
+            ;;
+        *)
+            echo "$NAME: unknown argument: $arg" >&2
+            echo "Try --help for usage." >&2
+            exit 2
+            ;;
+    esac
+done
+
+echo "=== aerial-lock emergency unlock ==="
+echo "Recovery tool for stuck ext-session-lock-v1 sessions."
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    echo "  Wayland display: $WAYLAND_DISPLAY"
+fi
+echo ""
+
+# Check for existing aerial-lock process
+if pgrep -f 'qs -p.*aerial-lock' > /dev/null; then
+    AERIAL_PIDS="$(pgrep -f 'qs -p.*aerial-lock' | tr '\n' ' ')"
+    if [ $PURGE -eq 1 ]; then
+        echo "[--purge] aerial-lock process detected (PID: $AERIAL_PIDS); killing it..."
+        pkill -TERM -f 'qs -p.*aerial-lock' || true
+        sleep 0.3
+        if pgrep -f 'qs -p.*aerial-lock' > /dev/null; then
+            echo "[--purge] SIGTERM did not stop it (PID still present); sending SIGKILL..."
+            pkill -KILL -f 'qs -p.*aerial-lock' || true
+            sleep 0.2
+        fi
+        if pgrep -f 'qs -p.*aerial-lock' > /dev/null; then
+            echo "[--purge] WARNING: aerial-lock process still running after SIGKILL."
+            echo "  Manual intervention may be needed."
+        else
+            echo "[--purge] aerial-lock process cleared."
+        fi
+    else
+        echo "NOTE: aerial-lock is currently running (PID: $AERIAL_PIDS)."
+        echo "In soft mode, this tool will attempt to take over the lock."
+        echo "If the compositor rejects the takeover, try:"
+        echo "  1. Dismiss the aerial-lock UI normally (password or dismiss button)"
+        echo "  2. Or re-run with --purge to force-kill aerial-lock first"
+        echo ""
+    fi
+else
+    echo "No aerial-lock process detected."
+    if [ $PURGE -eq 1 ]; then
+        echo "[--purge] Nothing to kill — continuing with lock takeover."
+        echo ""
+    else
+        echo "continuing with lock takeover..."
+        echo ""
+    fi
+fi
+
+if [ ! -f "$QML_PATH" ]; then
+    echo "ERROR: EmergencyUnlock.qml not found at $QML_PATH" >&2
+    exit 1
+fi
+
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "ERROR: WAYLAND_DISPLAY is not set and no Wayland socket found." >&2
+    echo "  Is niri running? The compositor must be active for lock takeover." >&2
+    echo "  Try: ps aux | grep niri" >&2
+    exit 1
+fi
+
+echo "Launching Quickshell recovery config..."
+echo "  Log captured at $LOG_PATH"
+echo ""
+
+qs -p "$QML_PATH" 2>&1 | tee "$LOG_PATH"
+EXITCODE=${PIPESTATUS[0]}
+
+echo ""
+if [ $EXITCODE -eq 0 ]; then
+    echo "$NAME: recovery config exited cleanly (code 0)."
+    echo "  Check screen state."
+    echo "  If still locked, review $LOG_PATH"
+    if [ $PURGE -eq 0 ]; then
+        echo "  and try with --purge."
+    fi
+else
+    echo "$NAME: recovery config exited with code $EXITCODE."
+    echo "  Manual recovery paths:"
+    echo "  1. Ctrl+Alt+F2 → login → pkill -f 'qs -p.*aerial-lock'"
+    echo "  2. Launch a working locker (swaylock-plugin) and dismiss it with password"
+    if [ $PURGE -eq 0 ]; then
+        echo "  3. Retry aerial-emergency-unlock --purge"
+    fi
+    exit $EXITCODE
+fi

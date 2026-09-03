@@ -1,0 +1,27 @@
+{
+  "language": "en",
+  "backgroundColor": "#000000",
+  "pamService": "aerial-lock",
+  "fadeMs": 300,
+  "fallbackQuitMs": 3000,
+  "debugAllowDismiss": false,
+  "panel": {
+    "widthMax": 360,
+    "fieldHeight": 40,
+    "radius": 12,
+    "fieldRadius": 8,
+    "outerMargin": 20,
+    "spacing": 12,
+    "fontSize": 16
+  },
+  "colors": {
+    "text": "#dddddd",
+    "textError": "#ff5555",
+    "input": "#ffffff",
+    "panelFill": "#14ffffff",
+    "panelBorder": "#1fffffff",
+    "fieldFill": "#0fffffff",
+    "fieldBorderFocused": "#40ffffff",
+    "fieldBorder": "#1affffff"
+  }
+}

@@ -1,0 +1,4 @@
+# PAM configuration file for the aerial-lock screen locker.
+# Delegates to /etc/pam.d/login, matching the swaylock / hyprlock convention.
+
+auth include login
