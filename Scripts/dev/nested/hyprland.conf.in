@@ -1,0 +1,14 @@
+# Nested Hyprland sandbox for aerial-lock testing.
+# Rendered by Scripts/dev/nested.sh (@REPO_ROOT@ / @TERMINAL@ are
+# substituted at launch); do not run Hyprland on this template directly.
+
+exec-once = @TERMINAL@
+
+# Launch the locker from this repo.
+bind = SUPER, L, exec, qs -p @REPO_ROOT@
+
+# Recovery tool — bindl fires even while the session is locked.
+bindl = SUPER, E, exec, @REPO_ROOT@/aerial-emergency-unlock
+
+# In-sandbox escape — bindl fires even while the session is locked.
+bindl = SUPERSHIFT, Escape, exit,
