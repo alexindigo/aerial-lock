@@ -28,7 +28,7 @@ ShellRoot {
 
     Connections {
         target: lock
-        function onSecureChanged() {
+        function onSecureStateChanged() {
             log("compositor state: secure=" + lock.secure + " locked=" + lock.locked)
             if (lock.secure && !root.engaged) {
                 root.engaged = true
@@ -37,7 +37,7 @@ ShellRoot {
                 releaseTimer.start()
             }
         }
-        function onLockedChanged() {
+        function onLockStateChanged() {
             log("compositor state: locked=" + lock.locked + " secure=" + lock.secure)
             if (!lock.locked && root.releasing && !root.completed) {
                 root.completed = true

@@ -103,7 +103,7 @@ Scope {
 
     Connections {
         target: sessionLock
-        function onLockedChanged() {
+        function onLockStateChanged() {
             log("sessionLock.locked changed: locked=" + sessionLock.locked +
                 " secure=" + sessionLock.secure +
                 " ourIntent=" + root.locked +
