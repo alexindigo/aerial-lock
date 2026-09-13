@@ -138,7 +138,10 @@ Scope {
             statusMessage = i18n.authenticating || "Authenticating..."
         } else {
             log("tryUnlock: calling pam.start")
-            pam.start()
+            if (!pam.start()) {
+                statusMessage = i18n.authError || "Authentication error"
+                console.warn("aerial-lock: pam.start() failed for service", pam.config)
+            }
         }
     }
 }
