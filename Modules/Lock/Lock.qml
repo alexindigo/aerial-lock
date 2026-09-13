@@ -13,7 +13,7 @@ Scope {
     property bool locked: true
     property bool unlockHandled: false
 
-    property string passwordBuffer: ""
+    property string pendingPassword: ""
     property bool unlockInProgress: false
     property string statusMessage: ""
 
@@ -43,6 +43,7 @@ Scope {
                 height: Math.min(120, parent.height * 0.5)
                 statusMessage: root.statusMessage
                 unlockInProgress: root.unlockInProgress
+                responseVisible: pam.responseVisible
                 config: root.config
 
                 onPasswordSubmitted: function (password) {
@@ -52,6 +53,7 @@ Scope {
                 onDismissRequested: {
                     log("onDismissRequested received")
                     if (root.config.data && root.config.data.debugAllowDismiss) {
+                        pam.abort()
                         log("dismiss: setting root.locked = false")
                         root.locked = false
                     }
@@ -66,16 +68,23 @@ Scope {
         configDirectory: "/etc/pam.d"
         user: Quickshell.env("USER") || Quickshell.env("LOGNAME") || ""
 
+        onPamMessage: {
+            log("PAM message: " + message + " (error=" + messageIsError + ")")
+            watchdog.restart()
+            if (message && message.length > 0) {
+                statusMessage = message
+            }
+        }
+
         onResponseRequiredChanged: {
-            if (responseRequired && passwordBuffer !== "") {
-                respond(passwordBuffer)
-                passwordBuffer = ""
-                unlockInProgress = true
-                statusMessage = i18n.authenticating || "Authenticating..."
+            if (responseRequired) {
+                watchdog.restart()
+                answerPrompt()
             }
         }
 
         onCompleted: function (result) {
+            watchdog.stop()
             log("PamContext.onCompleted: result=" + result +
                 " (Success=" + PamResult.Success + ")")
             if (result === PamResult.Success) {
@@ -85,7 +94,7 @@ Scope {
                 root.locked = false
             } else {
                 unlockInProgress = false
-                passwordBuffer = ""
+                pendingPassword = ""
                 if (result === PamResult.MaxTries) {
                     statusMessage = i18n.maxTries || "Too many attempts"
                 } else {
@@ -95,10 +104,34 @@ Scope {
         }
 
         onError: function (error) {
+            watchdog.stop()
             unlockInProgress = false
-            passwordBuffer = ""
+            pendingPassword = ""
             statusMessage = i18n.authError || "Authentication error"
         }
+    }
+
+    // Watchdog: a PAM transaction can hang without ever asking anything
+    // (slow module, hardware-key touch nobody makes, offline pam_sss). This
+    // is an inactivity timer, not a wall-clock deadline — any PAM traffic
+    // restarts it, so chatty stacks run as long as they need. On fire the
+    // abort returns to a fresh prompt; it never unlocks.
+    Timer {
+        id: watchdog
+        interval: config.data.pamWatchdogTimeoutMs
+        repeat: false
+        running: false
+        onTriggered: {
+            log("PAM watchdog: no PAM traffic for " + interval + "ms — aborting stuck transaction")
+            pam.abort()
+            unlockInProgress = false
+            pendingPassword = ""
+            statusMessage = i18n.timedOut || "Authentication timed out — try again"
+        }
+    }
+
+    Component.onDestruction: {
+        pam.abort()
     }
 
     Connections {
@@ -121,24 +154,48 @@ Scope {
         }
     }
 
-    function tryUnlock(password) {
-        log("tryUnlock: unlockInProgress=" + unlockInProgress +
-            " pam.responseRequired=" + pam.responseRequired)
-        if (unlockInProgress) {
-            return
-        }
-
-        passwordBuffer = password
-
-        if (pam.responseRequired) {
-            log("tryUnlock: calling pam.respond")
-            pam.respond(password)
-            passwordBuffer = ""
+    // Two-phase conversation: phase 1 sends the just-submitted password;
+    // phase 2 (no pending password — PAM wants something else) surfaces
+    // PAM's own message and waits for the user. The distinction keys on
+    // "did PAM ask again?", never on matching prompt strings.
+    function answerPrompt() {
+        if (pendingPassword !== "") {
+            var pw = pendingPassword
+            pendingPassword = ""
+            pam.respond(pw)
             unlockInProgress = true
             statusMessage = i18n.authenticating || "Authenticating..."
         } else {
+            if (pam.message && pam.message.length > 0) {
+                statusMessage = pam.message
+            }
+            unlockInProgress = false
+        }
+    }
+
+    function tryUnlock(password) {
+        log("tryUnlock: unlockInProgress=" + unlockInProgress +
+            " pam.responseRequired=" + pam.responseRequired)
+        if (unlockInProgress && pendingPassword === "") {
+            return
+        }
+
+        pendingPassword = password
+
+        if (pam.responseRequired) {
+            log("tryUnlock: calling pam.respond")
+            var response = pendingPassword
+            pendingPassword = ""
+            pam.respond(response)
+            unlockInProgress = true
+            statusMessage = i18n.authenticating || "Authenticating..."
+            watchdog.restart()
+        } else {
             log("tryUnlock: calling pam.start")
+            watchdog.restart()
             if (!pam.start()) {
+                watchdog.stop()
+                pendingPassword = ""
                 statusMessage = i18n.authError || "Authentication error"
                 console.warn("aerial-lock: pam.start() failed for service", pam.config)
             }

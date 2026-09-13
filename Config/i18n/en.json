@@ -4,6 +4,7 @@
   "authFailed": "Authentication failed",
   "maxTries": "Too many attempts",
   "authError": "Authentication error",
+  "timedOut": "Authentication timed out — try again",
   "unlocked": "Unlocked",
   "dismissDebug": "Dismiss (debug)"
 }

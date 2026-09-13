@@ -37,6 +37,7 @@ Scope {
         pamService: "string",
         fadeMs: "number",
         fallbackQuitMs: "number",
+        pamWatchdogTimeoutMs: "number",
         debugAllowDismiss: "boolean",
         panel: "object",
         colors: "object"

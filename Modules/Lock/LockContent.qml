@@ -9,6 +9,7 @@ FocusScope {
 
     property string statusMessage: ""
     property bool unlockInProgress: false
+    property bool responseVisible: false
 
     readonly property var configData: config.data || {}
     readonly property var i18n: config.i18n || {}
@@ -24,6 +25,14 @@ FocusScope {
     Component.onCompleted: {
         log("Component.onCompleted")
         passwordField.forceActiveFocus()
+    }
+
+    // Re-arm focus whenever the field becomes usable again: a fresh PAM
+    // prompt, a failed attempt, or a watchdog abort all land here.
+    onUnlockInProgressChanged: {
+        if (!unlockInProgress) {
+            passwordField.forceActiveFocus()
+        }
     }
 
     focus: true
@@ -81,7 +90,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: colors.input || "#ffffff"
                     font.pixelSize: panel.fontSize || 16
-                    echoMode: TextInput.Password
+                    echoMode: responseVisible ? TextInput.Normal : TextInput.Password
                     passwordMaskDelay: 0
                     enabled: !root.unlockInProgress
                     focus: true
