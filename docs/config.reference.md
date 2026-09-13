@@ -57,6 +57,14 @@ requested language is missing.
 User overrides at `~/.config/aerial-lock/i18n/<lang>.json` take precedence
 over bundle defaults.
 
+## Known limitations
+
+- **No PAM account-management phase.** Quickshell's `PamContext` runs
+  `pam_authenticate` only, so interactive account-management flows (e.g. an
+  expired password's "new password/retype" prompt) are unreachable — identical
+  to swaylock and hyprlock, which are also auth-only. A plain expired password
+  still authenticates correctly.
+
 ## PAM_MAX_RESP_SIZE
 
 This value is derived at build time from `/usr/include/security/_pam_types.h`
