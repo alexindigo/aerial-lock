@@ -62,7 +62,7 @@ Scope {
 
     PamContext {
         id: pam
-        config: Quickshell.env("AERIAL_LOCK_PAM_SERVICE") || root.config.data.pamService
+        config: root.config.pamService
         configDirectory: "/etc/pam.d"
         user: Quickshell.env("USER") || Quickshell.env("LOGNAME") || ""
 

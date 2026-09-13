@@ -24,6 +24,13 @@ Scope {
     readonly property string defaultsPath: Quickshell.shellDir + "/Config/defaults.json"
     readonly property string i18nDir: Quickshell.shellDir + "/Config/i18n"
 
+    readonly property string pamService: {
+        var override = Quickshell.env("AERIAL_LOCK_PAM_SERVICE")
+        if (override && override.length > 0) return override
+        return (data && data.pamService) ? data.pamService : "aerial-lock"
+    }
+    readonly property string pamConfigDirectory: "/etc/pam.d"
+
     readonly property var schema: ({
         language: "string",
         backgroundColor: "string",
