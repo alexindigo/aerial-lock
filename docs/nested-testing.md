@@ -43,7 +43,6 @@ still show the original `WAYLAND_DISPLAY` after the sandbox exits).
 | Bind | niri sandbox | Hyprland sandbox |
 |---|---|---|
 | Launch locker from the repo | `Mod+L` | `SUPER+L` |
-| Emergency unlock (works while locked) | `Mod+E` (`allow-when-locked`) | `SUPER+E` (`bindl`) |
 | Kill switch — kill the locker (works while locked) | `Mod+Shift+Escape` (`allow-when-locked`; spawn is the only bind class niri allows to fire while locked) | — |
 | Quit the nested compositor | `Mod+Shift+Q` (when unlocked) | `SUPER+Shift+Escape` (`bindl` exit, one press) |
 
