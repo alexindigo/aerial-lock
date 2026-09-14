@@ -114,16 +114,17 @@ private:
         m_child->start();
 
         // Watch the locker's stdout for the compositor-confirmed secure
-        // transition; this is what "reached secure" means for the
-        // escalation gate, and the fallback lock-state signal when the
-        // compositor exposes no LockedHint.
+        // transition; this is the lock-state signal when the compositor
+        // exposes no LockedHint (niri), and the source for the escalation
+        // gate (a respawn that reached secure and then crashed is never
+        // auto-unlocked).
         connect(m_child, &QProcess::readyReadStandardOutput, this, [this] {
             const QByteArray out = m_child->readAllStandardOutput();
-            if (out.contains("sessionLock.secure=true")) {
+            if (out.contains("secure=true")) {
                 m_lastSecure = true;
                 if (m_attempt > 1)
                     m_reachedSecure = true;
-            } else if (out.contains("sessionLock.secure=false")) {
+            } else if (out.contains("secure=false")) {
                 m_lastSecure = false;
             }
         });
@@ -159,8 +160,8 @@ private:
 
         // Was the session locked when the child died? Ask the compositor:
         // LockedHint where the compositor sets it, the locker's own secure
-        // log otherwise. No marker file — the locker's stdout is read live
-        // below, and LockedHint survives the child by definition.
+        // log otherwise. (niri does not set LockedHint, so on niri this is
+        // the locker's compositor-confirmed secure value.)
         bool diedWhileLocked;
         if (m_lockedHintSupported) {
             HintState hint = queryLockedHint();
@@ -175,21 +176,16 @@ private:
             return;
         }
 
-        // Locker died while the session was locked.
-        if (m_reachedSecure) {
-            // It had reached secure earlier and then crashed. Post-engagement
-            // crashes could be attacker-induced from the lock UI — never
-            // convert those into an automatic unlock.
-            log(QStringLiteral("respawned instance had reached secure before "
-                               "crashing — staying locked, escalating to manual "
-                               "recovery only (see README)"));
-            QCoreApplication::exit(2);
-            return;
-        }
-
-        if (m_attempt <= RESPAWN_LIMIT) {
-            log(QStringLiteral("locker died while locked — respawning in %1 ms")
-                    .arg(RESPAWN_BACKOFF_MS));
+        // Respawn cap for a *locked* session only. The first locker is
+        // attempt 1; respawns 2..N up to RESPAWN_LIMIT. After that, in-process
+        // takeover (a crashed locker can never reach secure again, so the
+        // respawn loop is bounded).
+        if (m_attempt < RESPAWN_LIMIT) {
+            log(QStringLiteral("locker died while locked — respawning in %1 ms "
+                               "(attempt %2/%3)")
+                    .arg(RESPAWN_BACKOFF_MS)
+                    .arg(m_attempt + 1)
+                    .arg(RESPAWN_LIMIT));
             QTimer::singleShot(RESPAWN_BACKOFF_MS, this, [this] {
                 launch();
             });
@@ -204,6 +200,22 @@ private:
         // In-process takeover (d26a), never exec'd.
         log(QStringLiteral("running in-process takeover…"));
         Takeover::Outcome outcome = Takeover::run(5000);
+
+        // Hyprland legacy-config-manager builds have no
+        // hl.clear_crashed_lockscreen(); the only client-side recovery there
+        // is the allow_session_lock_restore flag, set just-in-time on refusal
+        // then unset. Detect Hyprland by env; niri/sway take the lock
+        // unconditionally.
+        if (outcome == Takeover::Outcome::Refused && isHyprland()) {
+            log(QStringLiteral("takeover refused on Hyprland — setting "
+                               "misc:allow_session_lock_restore just-in-time, "
+                               "retrying, then unsetting"));
+            if (setHyprlandRestoreFlag(true)) {
+                outcome = Takeover::run(5000);
+                setHyprlandRestoreFlag(false);
+            }
+        }
+
         switch (outcome) {
         case Takeover::Outcome::Recovered:
             log(QStringLiteral("takeover recovered the session"));
@@ -222,6 +234,26 @@ private:
             QCoreApplication::exit(2);
             return;
         }
+    }
+
+    static bool isHyprland()
+    {
+        const char *sig = getenv("HYPRLAND_INSTANCE_SIGNATURE");
+        return sig && *sig;
+    }
+
+    // hyprctl keyword misc:allow_session_lock_restore <0|1>
+    static bool setHyprlandRestoreFlag(bool on)
+    {
+        QProcess p;
+        p.start(QStringLiteral("hyprctl"),
+                {QStringLiteral("keyword"),
+                 QStringLiteral("misc:allow_session_lock_restore"),
+                 on ? QStringLiteral("1") : QStringLiteral("0")});
+        if (!p.waitForFinished(3000)) {
+            return false;
+        }
+        return p.exitCode() == 0;
     }
 
     void log(const QString &msg)

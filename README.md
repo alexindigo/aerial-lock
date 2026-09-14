@@ -101,11 +101,18 @@ See [`docs/config.reference.md`](docs/config.reference.md) for available options
 
 ## Recovery (last resort)
 
-If the locker crashes while the session is locked, a native binary takes the
-lock over and releases it — no Quickshell dependency, so a Quickshell-side
-crash cannot take it down too. Install puts it at `/usr/bin/aerial-unlock`.
+The supervisor (`aerial-lock-supervisor`, what `aerial-lock` actually execs)
+owns the locker lifecycle: it spawns the QML locker, respawns it up to three
+times on abnormal death, then releases the stuck lock in-process. A manual
+TTY binary (`aerial-unlock`) is installed alongside for diagnostics.
 
-**From a TTY (or SSH), as the same user:**
+**Automatic.** You don't need to do anything — if the locker crashes while
+the session is locked, the supervisor notices (lock state from the
+compositor, not a file), restarts it, and if restarts keep failing it takes
+the lock over itself. A respawn that *reached secure and then crashed* is
+treated as suspicious and never auto-unlocks (see "Safety gate" below).
+
+**From a TTY (or SSH), as the same user — diagnostics only:**
 
 ```
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
@@ -128,20 +135,32 @@ aerial-unlock --purge    # kill stale aerial-lock processes, then recover
 | 2 | inconclusive — compositor didn't answer within 5 s |
 | 3 | refused — a live client holds the lock (PID + `--purge` hint) |
 
+**Safety gate.** The supervisor only auto-releases when every respawn died
+*before* reaching secure — the signature of environmental breakage
+(compositor/PAM/GL broken), not an attack. If any respawn reached secure and
+then crashed, it stays locked and points at manual recovery, because repeated
+post-engagement crashes could be attacker-induced from the lock UI.
+
 **Compositor notes.** Dead-locker recovery is compositor policy:
 
 - **Niri / Sway (wlroots)** — takeover of a dead lock is unconditional; the
   tool works as-is. On Niri, a dead locker shows a dark-maroon screen
   (that's the compositor's clientless-lock colour, not aerial-lock).
-- **Hyprland ≥ 0.56.1** — a dead locker shows the "lockdead" fallback;
-  recovery is the compositor's own `hl.clear_crashed_lockscreen()` (no flag
-  needed), after which a fresh locker engages normally. The supervisor (d26b)
-  calls that automatically; manual recovery there means calling it, then
-  restarting the locker.
-- **Hyprland < 0.56.1** — no such command; set
-  `misc { allow_session_lock_restore = true }` + `hyprctl reload`, then the
-  tool can take over.
+- **Hyprland ≥ 0.56.1** — a dead locker shows the "lockdead" fallback.
+  Recovery needs the client-side flag
+  `misc { allow_session_lock_restore = true }`; the supervisor sets it
+  just-in-time on a refusal, retries the takeover, then unsets it. (Arch's
+  legacy-config-manager build has no `hl.clear_crashed_lockscreen()`, so the
+  flag path is the only one that works here.)
+- **Hyprland < 0.56.1** — same flag path; no other command exists.
 - **GNOME** — the protocol isn't exposed to third-party clients; not
+  applicable.
+
+`loginctl unlock-session` does **not** work anywhere — lock state lives in
+the compositor, not logind. "Correct password always fails" is a different
+symptom (`pam_faillock`); fix with `sudo faillock --reset`.
+
+## License
   applicable.
 
 `loginctl unlock-session` does **not** work anywhere — lock state lives in

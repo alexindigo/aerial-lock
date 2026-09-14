@@ -67,11 +67,14 @@ over bundle defaults.
 
 ## Recovery
 
-The native recovery tool `aerial-unlock` (installed to `/usr/bin`) takes over
-a stuck session lock and releases it — zero shared runtime with the locker.
-Exit codes and compositor-specific recovery paths are in the README's
-"Recovery (last resort)" section. Its behaviour is fixed (no configuration):
-socket discovery, refusal detection, explicit-PID `--purge`.
+The supervisor (`aerial-lock-supervisor`, what `aerial-lock` execs) owns the
+locker lifecycle: spawns the QML locker, respawns on abnormal death (limit
+**3**, short backoff), then releases the stuck lock in-process. It never
+auto-releases if a respawn reached secure and then crashed (that pattern
+could be attacker-induced). A manual TTY binary `aerial-unlock` is installed
+alongside; exit codes and the per-compositor recovery story are in the
+README's "Recovery (last resort)" section. Behaviour is fixed — the respawn
+limit and timeouts are build constants, not configuration.
 
 ## PAM_MAX_RESP_SIZE
 
