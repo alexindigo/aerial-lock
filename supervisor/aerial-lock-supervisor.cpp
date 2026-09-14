@@ -118,11 +118,20 @@ private:
     void launch()
     {
         m_attempt++;
-        log(QStringLiteral("launching locker, attempt %1/%2")
-                .arg(m_attempt).arg(RESPAWN_LIMIT + 1));
+        m_video = nextVideo();
+        log(QStringLiteral("launching locker, attempt %1/%2%3")
+                .arg(m_attempt).arg(RESPAWN_LIMIT + 1)
+                .arg(m_video.isEmpty() ? QString()
+                                       : QStringLiteral(" (video: %1)").arg(m_video)));
         m_child = new QProcess(this);
         m_child->setProgram(QStringLiteral("qs"));
-        m_child->setArguments({QStringLiteral("-p"), m_lockerCommand});
+        QStringList args{QStringLiteral("-p"), m_lockerCommand};
+        m_child->setArguments(args);
+        if (!m_video.isEmpty()) {
+            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+            env.insert(QStringLiteral("AERIAL_LOCK_VIDEO"), m_video);
+            m_child->setProcessEnvironment(env);
+        }
         connect(m_child, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
                 this, &Supervisor::onChildFinished);
         connect(m_child, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
@@ -131,6 +140,29 @@ private:
         });
         m_childFailedToStart = false;
         m_child->start();
+    }
+
+    // A respawn picks a different video than the one playing at crash time —
+    // content-specific crashes are a real class, and a fresh file makes a
+    // repeat less likely. Empty if no video pool is configured (the locker
+    // renders its solid background, which is the current behaviour).
+    QString nextVideo()
+    {
+        const char *pool = getenv("AERIAL_LOCK_VIDEO_POOL");
+        if (!pool || !*pool) return QString();
+        QDir dir(QString::fromLatin1(pool));
+        if (!dir.exists()) return QString();
+        QStringList files = dir.entryList(QDir::Files, QDir::Name);
+        if (files.isEmpty()) return QString();
+        // rotate: pick the next file after the last one used, wrapping
+        QString pick = files.first();
+        if (!m_lastVideo.isEmpty()) {
+            int idx = files.indexOf(m_lastVideo);
+            if (idx >= 0 && files.size() > 1)
+                pick = files.at((idx + 1) % files.size());
+        }
+        m_lastVideo = pick;
+        return dir.absoluteFilePath(pick);
     }
 
     void onChildFinished(int exitCode, QProcess::ExitStatus status)
@@ -219,6 +251,8 @@ private:
 
     QProcess *m_child = nullptr;
     QString m_lockerCommand;
+    QString m_video;
+    QString m_lastVideo;
     int m_attempt = 0;
     bool m_reachedSecure = false;
     bool m_lockedHintSupported = false;
