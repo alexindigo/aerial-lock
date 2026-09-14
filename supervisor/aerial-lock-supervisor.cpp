@@ -6,17 +6,16 @@
  * in-process. Never spawns the old bash/QML pair; never links Qt Quick or
  * QML (QtCore + QtDBus + wayland-client only).
  *
- * Lock state is tracked via a marker file (survives the locker's death),
- * optionally corroborated by logind's LockedHint where the compositor sets
- * it (probed at first lock).
+ * Lock state comes from the compositor: logind LockedHint where the
+ * compositor sets it (survives the locker's death by definition), or the
+ * locker's own compositor-confirmed secure log as the fallback. No marker
+ * file.
  */
 #include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDBusPendingReply>
 #include <QDir>
-#include <QFile>
-#include <QFileInfo>
 #include <QProcess>
 #include <QTextStream>
 #include <QTimer>
@@ -30,32 +29,7 @@
 static const int RESPAWN_LIMIT = 3;
 static const int RESPAWN_BACKOFF_MS = 1500;
 
-static QString markerPath()
-{
-    const char *xdg = getenv("XDG_RUNTIME_DIR");
-    return QString::fromLatin1(xdg && *xdg ? xdg : "/tmp") + "/aerial-lock.locked";
-}
-
-/* ---- marker file (publish/clear/stale check) ---- */
-
-static void markLocked()
-{
-    QFile f(markerPath());
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        f.write("1\n");
-}
-
-static void clearLocked()
-{
-    QFile::remove(markerPath());
-}
-
-static bool markerPresent()
-{
-    return QFile::exists(markerPath());
-}
-
-/* ---- LockedHint probe (logind) ---- */
+/* ---- lock state: ask the compositor directly, never a marker file ---- */
 
 enum class HintState { Unknown, Locked, Unlocked, Unsupported };
 
@@ -92,13 +66,11 @@ public:
         m_lockerCommand = lockerCommandLine();
         m_lockedHintSupported = (queryLockedHint() != HintState::Unsupported);
         if (m_lockedHintSupported)
-            log("LockedHint: supported — used to resolve stale markers");
+            log("LockedHint: supported — used to resolve lock state");
         else
-            log("LockedHint: not exposed by this compositor — marker only");
+            log("LockedHint: not exposed by this compositor — falling back to "
+                "the locker's stdout (sessionLock.secure)");
 
-        // clean slate: a stale marker from a previous run must not make us
-        // relock before anything has actually locked
-        clearLocked();
         m_attempt = 0;
         m_reachedSecure = false;
         launch();
@@ -140,6 +112,21 @@ private:
         });
         m_childFailedToStart = false;
         m_child->start();
+
+        // Watch the locker's stdout for the compositor-confirmed secure
+        // transition; this is what "reached secure" means for the
+        // escalation gate, and the fallback lock-state signal when the
+        // compositor exposes no LockedHint.
+        connect(m_child, &QProcess::readyReadStandardOutput, this, [this] {
+            const QByteArray out = m_child->readAllStandardOutput();
+            if (out.contains("sessionLock.secure=true")) {
+                m_lastSecure = true;
+                if (m_attempt > 1)
+                    m_reachedSecure = true;
+            } else if (out.contains("sessionLock.secure=false")) {
+                m_lastSecure = false;
+            }
+        });
     }
 
     // A respawn picks a different video than the one playing at crash time —
@@ -170,23 +157,20 @@ private:
         log(QStringLiteral("child finished: exit=%1 status=%2")
                 .arg(exitCode).arg(status));
 
-        // Did it die while the session was locked? The marker file (written
-        // by the supervisor below) is the ground truth, corroborated by
-        // LockedHint where the compositor exposes it.
-        bool diedWhileLocked = markerPresent();
-        if (diedWhileLocked && m_lockedHintSupported) {
+        // Was the session locked when the child died? Ask the compositor:
+        // LockedHint where the compositor sets it, the locker's own secure
+        // log otherwise. No marker file — the locker's stdout is read live
+        // below, and LockedHint survives the child by definition.
+        bool diedWhileLocked;
+        if (m_lockedHintSupported) {
             HintState hint = queryLockedHint();
-            if (hint == HintState::Unlocked) {
-                log(QStringLiteral("marker present but LockedHint says "
-                                   "unlocked — stale marker, clearing"));
-                clearLocked();
-                QCoreApplication::quit();
-                return;
-            }
+            diedWhileLocked = (hint == HintState::Locked);
+        } else {
+            diedWhileLocked = m_lastSecure;
         }
 
         if (!diedWhileLocked) {
-            log(QStringLiteral("clean exit (marker absent) — done"));
+            log(QStringLiteral("clean exit (session not locked) — done"));
             QCoreApplication::quit();
             return;
         }
@@ -199,7 +183,6 @@ private:
             log(QStringLiteral("respawned instance had reached secure before "
                                "crashing — staying locked, escalating to manual "
                                "recovery only (see README)"));
-            clearLocked();
             QCoreApplication::exit(2);
             return;
         }
@@ -224,7 +207,6 @@ private:
         switch (outcome) {
         case Takeover::Outcome::Recovered:
             log(QStringLiteral("takeover recovered the session"));
-            clearLocked();
             QCoreApplication::exit(0);
             return;
         case Takeover::Outcome::Refused:
@@ -255,6 +237,7 @@ private:
     QString m_lastVideo;
     int m_attempt = 0;
     bool m_reachedSecure = false;
+    bool m_lastSecure = false;
     bool m_lockedHintSupported = false;
     bool m_childFailedToStart = false;
 };
