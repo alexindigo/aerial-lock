@@ -99,6 +99,55 @@ See [`docs/config.reference.md`](docs/config.reference.md) for available options
 | river / Wayfire  | Likely works    |
 | GNOME / Mutter   | Not supported   |
 
+## Recovery (last resort)
+
+If the locker crashes while the session is locked, a native binary takes the
+lock over and releases it — no Quickshell dependency, so a Quickshell-side
+crash cannot take it down too. Install puts it at `/usr/bin/aerial-unlock`.
+
+**From a TTY (or SSH), as the same user:**
+
+```
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+# find the stuck session's socket — usually the older wayland-N
+ls -la $XDG_RUNTIME_DIR/wayland-*
+WAYLAND_DISPLAY=wayland-N aerial-unlock
+```
+
+Then switch back to that session's TTY. If a *live* locker still holds the
+lock, the tool reports the PID and suggests:
+
+```
+aerial-unlock --purge    # kill stale aerial-lock processes, then recover
+```
+
+| Exit | Meaning |
+|---|---|
+| 0 | recovered — lock taken over and released |
+| 1 | no Wayland socket / environment (guidance printed) |
+| 2 | inconclusive — compositor didn't answer within 5 s |
+| 3 | refused — a live client holds the lock (PID + `--purge` hint) |
+
+**Compositor notes.** Dead-locker recovery is compositor policy:
+
+- **Niri / Sway (wlroots)** — takeover of a dead lock is unconditional; the
+  tool works as-is. On Niri, a dead locker shows a dark-maroon screen
+  (that's the compositor's clientless-lock colour, not aerial-lock).
+- **Hyprland ≥ 0.56.1** — a dead locker shows the "lockdead" fallback;
+  recovery is the compositor's own `hl.clear_crashed_lockscreen()` (no flag
+  needed), after which a fresh locker engages normally. The supervisor (d26b)
+  calls that automatically; manual recovery there means calling it, then
+  restarting the locker.
+- **Hyprland < 0.56.1** — no such command; set
+  `misc { allow_session_lock_restore = true }` + `hyprctl reload`, then the
+  tool can take over.
+- **GNOME** — the protocol isn't exposed to third-party clients; not
+  applicable.
+
+`loginctl unlock-session` does **not** work anywhere — lock state lives in
+the compositor, not logind. "Correct password always fails" is a different
+symptom (`pam_faillock`); fix with `sudo faillock --reset`.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

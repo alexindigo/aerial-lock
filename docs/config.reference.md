@@ -65,6 +65,14 @@ over bundle defaults.
   to swaylock and hyprlock, which are also auth-only. A plain expired password
   still authenticates correctly.
 
+## Recovery
+
+The native recovery tool `aerial-unlock` (installed to `/usr/bin`) takes over
+a stuck session lock and releases it — zero shared runtime with the locker.
+Exit codes and compositor-specific recovery paths are in the README's
+"Recovery (last resort)" section. Its behaviour is fixed (no configuration):
+socket discovery, refusal detection, explicit-PID `--purge`.
+
 ## PAM_MAX_RESP_SIZE
 
 This value is derived at build time from `/usr/include/security/_pam_types.h`
