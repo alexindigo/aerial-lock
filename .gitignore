@@ -16,3 +16,8 @@ gen-pam-limits.tmp
 # OS
 .DS_Store
 Thumbs.db
+
+# Recovery tool (build-generated from wayland-protocols + C++)
+recovery/aerial-unlock
+recovery/ext-session-lock-v1-client.h
+recovery/ext-session-lock-v1-protocol.c
