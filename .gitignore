@@ -21,3 +21,9 @@ Thumbs.db
 recovery/aerial-unlock
 recovery/ext-session-lock-v1-client.h
 recovery/ext-session-lock-v1-protocol.c
+
+# Supervisor (build-generated from wayland-protocols + C++/moc)
+supervisor/aerial-lock-supervisor
+supervisor/aerial-lock-supervisor.moc
+supervisor/ext-session-lock-v1-client.h
+supervisor/ext-session-lock-v1-protocol.c

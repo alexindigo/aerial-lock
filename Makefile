@@ -12,7 +12,7 @@ SESSION_LOCK_XML := $(WAYLAND_PROTOCOLS)/staging/ext-session-lock/ext-session-lo
 
 .PHONY: all install uninstall dev clean
 
-all: Config/pam-limits.json recovery/aerial-unlock
+all: Config/pam-limits.json recovery/aerial-unlock supervisor/aerial-lock-supervisor
 
 Config/pam-limits.json: gen-pam-limits.c
 ifdef PAM_MAX_RESP_SIZE
@@ -38,6 +38,25 @@ recovery/aerial-unlock: recovery/aerial-unlock.cpp recovery/ext-session-lock-v1-
 	$(CXX) -o $@ /tmp/aerial-unlock-main.o /tmp/aerial-unlock-proto.o \
 		$$(pkg-config --libs wayland-client)
 
+supervisor/ext-session-lock-v1-client.h: $(SESSION_LOCK_XML)
+	wayland-scanner client-header $< $@
+
+supervisor/ext-session-lock-v1-protocol.c: $(SESSION_LOCK_XML)
+	wayland-scanner private-code $< $@
+
+supervisor/aerial-lock-supervisor.moc: supervisor/aerial-lock-supervisor.cpp
+	/usr/lib/qt6/moc $< -o $@
+
+supervisor/aerial-lock-supervisor: supervisor/aerial-lock-supervisor.cpp supervisor/takeover.cpp supervisor/takeover.h supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
+	$(CC) -c supervisor/ext-session-lock-v1-protocol.c \
+		$$(pkg-config --cflags wayland-client) -o /tmp/aerial-supervisor-proto.o
+	$(CXX) -fPIC -c supervisor/takeover.cpp -Isupervisor \
+		$$(pkg-config --cflags wayland-client) -o /tmp/aerial-supervisor-takeover.o
+	$(CXX) -fPIC -c supervisor/aerial-lock-supervisor.cpp -Isupervisor \
+		$$(pkg-config --cflags Qt6Core Qt6DBus wayland-client) -o /tmp/aerial-supervisor-main.o
+	$(CXX) -o $@ /tmp/aerial-supervisor-main.o /tmp/aerial-supervisor-takeover.o /tmp/aerial-supervisor-proto.o \
+		$$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
+
 install: all
 	install -d $(DESTDIR)$(DATADIR)
 	install -d $(DESTDIR)$(DATADIR)/Modules/Lock
@@ -56,6 +75,7 @@ install: all
 	install -m 644 Config/i18n/en.json $(DESTDIR)$(I18NDIR)/
 	install -m 755 aerial-lock $(DESTDIR)$(BINDIR)/aerial-lock
 	install -m 755 recovery/aerial-unlock $(DESTDIR)$(BINDIR)/aerial-unlock
+	install -m 755 supervisor/aerial-lock-supervisor $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
 	install -d $(DESTDIR)$(PAMDIR)
 	install -m 644 pam.d/aerial-lock $(DESTDIR)$(PAMDIR)/aerial-lock
 
@@ -63,11 +83,13 @@ uninstall:
 	rm -rf $(DESTDIR)$(DATADIR)
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock
 	rm -f $(DESTDIR)$(BINDIR)/aerial-unlock
+	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
 	rm -f $(DESTDIR)$(PAMDIR)/aerial-lock
 
 clean:
 	rm -f gen-pam-limits.tmp Config/pam-limits.json
 	rm -f recovery/aerial-unlock recovery/ext-session-lock-v1-client.h recovery/ext-session-lock-v1-protocol.c
+	rm -f supervisor/aerial-lock-supervisor supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
 
 dev: all
 	qs -p .
