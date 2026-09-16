@@ -102,17 +102,19 @@ See [`docs/config.reference.md`](docs/config.reference.md) for available options
 ## Recovery (last resort)
 
 The supervisor (`aerial-lock-supervisor`, what `aerial-lock` actually execs)
-owns the locker lifecycle: it spawns the QML locker, respawns it up to three
-times on abnormal death, then releases the stuck lock in-process. A manual
-TTY binary (`aerial-unlock`) is installed alongside for diagnostics.
+owns the locker lifecycle: it spawns the QML locker and respawns it up to
+three times on abnormal death. When respawns run out it **stays locked** and
+escalates loudly — there is **no automatic unlock anywhere**. No path from
+the lock screen into the session exists that does not go through PAM.
 
-**Automatic.** You don't need to do anything — if the locker crashes while
-the session is locked, the supervisor notices (lock state from the
-compositor, not a file), restarts it, and if restarts keep failing it takes
-the lock over itself. A respawn that *reached secure and then crashed* is
-treated as suspicious and never auto-unlocks (see "Safety gate" below).
+**Automatic.** If the locker crashes while the session is locked, the
+supervisor restarts it (up to 3 times). Exit `0` means clean unlock / PAM
+refusal / external invalidation, so it does not respawn; anything else is an
+abnormal death and gets a respawn. Compositor death is detected first so the
+supervisor never spawns into a dead session. If all respawns fail, it stays
+locked — recover manually below.
 
-**From a TTY (or SSH), as the same user — diagnostics only:**
+**From a TTY (or SSH), as the same user — manual recovery / diagnostics:**
 
 ```
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
@@ -135,23 +137,18 @@ aerial-unlock --purge    # kill stale aerial-lock processes, then recover
 | 2 | inconclusive — compositor didn't answer within 5 s |
 | 3 | refused — a live client holds the lock (PID + `--purge` hint) |
 
-**Safety gate.** The supervisor only auto-releases when every respawn died
-*before* reaching secure — the signature of environmental breakage
-(compositor/PAM/GL broken), not an attack. If any respawn reached secure and
-then crashed, it stays locked and points at manual recovery, because repeated
-post-engagement crashes could be attacker-induced from the lock UI.
-
 **Compositor notes.** Dead-locker recovery is compositor policy:
 
-- **Niri / Sway (wlroots)** — takeover of a dead lock is unconditional; the
-  tool works as-is. On Niri, a dead locker shows a dark-maroon screen
-  (that's the compositor's clientless-lock colour, not aerial-lock).
-- **Hyprland ≥ 0.56.1** — a dead locker shows the "lockdead" fallback.
-  Recovery needs the client-side flag
+- **Niri / Sway (wlroots)** — takeover of a dead lock is unconditional; a
+  respawned locker replaces the dead one with no flag. On Niri, a dead locker
+  shows a dark-maroon screen (that's the compositor's clientless-lock colour,
+  not aerial-lock).
+- **Hyprland ≥ 0.56.1** — a dead locker shows the "lockdead" fallback. A
+  respawned locker is refused without the client-side flag
   `misc { allow_session_lock_restore = true }`; the supervisor sets it
-  just-in-time on a refusal, retries the takeover, then unsets it. (Arch's
-  legacy-config-manager build has no `hl.clear_crashed_lockscreen()`, so the
-  flag path is the only one that works here.)
+  just-in-time on Hyprland, respawns, and unsets it when the episode ends.
+  (Arch's legacy-config-manager build has no `hl.clear_crashed_lockscreen()`,
+  so the flag path is the only one that works here.)
 - **Hyprland < 0.56.1** — same flag path; no other command exists.
 - **GNOME** — the protocol isn't exposed to third-party clients; not
   applicable.
@@ -159,6 +156,13 @@ post-engagement crashes could be attacker-induced from the lock UI.
 `loginctl unlock-session` does **not** work anywhere — lock state lives in
 the compositor, not logind. "Correct password always fails" is a different
 symptom (`pam_faillock`); fix with `sudo faillock --reset`.
+
+*Design note:* an earlier automatic takeover-release ("the supervisor unlocks
+for you") was shelved to the `shelved/auto-release` branch — it was the only
+unauthenticated unlock in the design, so it was cut. If the locker can't
+start at all, recovery is manual (this section). A compositor-side minimal
+emergency locker (the KDE pattern) is recorded as the future answer for that
+strand case.
 
 ## License
   applicable.
