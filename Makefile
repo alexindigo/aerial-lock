@@ -47,14 +47,12 @@ supervisor/ext-session-lock-v1-protocol.c: $(SESSION_LOCK_XML)
 supervisor/aerial-lock-supervisor.moc: supervisor/aerial-lock-supervisor.cpp
 	/usr/lib/qt6/moc $< -o $@
 
-supervisor/aerial-lock-supervisor: supervisor/aerial-lock-supervisor.cpp supervisor/takeover.cpp supervisor/takeover.h supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
+supervisor/aerial-lock-supervisor: supervisor/aerial-lock-supervisor.cpp supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
 	$(CC) -c supervisor/ext-session-lock-v1-protocol.c \
 		$$(pkg-config --cflags wayland-client) -o /tmp/aerial-supervisor-proto.o
-	$(CXX) -fPIC -c supervisor/takeover.cpp -Isupervisor \
-		$$(pkg-config --cflags wayland-client) -o /tmp/aerial-supervisor-takeover.o
 	$(CXX) -fPIC -c supervisor/aerial-lock-supervisor.cpp -Isupervisor \
 		$$(pkg-config --cflags Qt6Core Qt6DBus wayland-client) -o /tmp/aerial-supervisor-main.o
-	$(CXX) -o $@ /tmp/aerial-supervisor-main.o /tmp/aerial-supervisor-takeover.o /tmp/aerial-supervisor-proto.o \
+	$(CXX) -o $@ /tmp/aerial-supervisor-main.o /tmp/aerial-supervisor-proto.o \
 		$$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
 
 install: all

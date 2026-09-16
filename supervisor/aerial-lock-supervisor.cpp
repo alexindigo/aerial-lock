@@ -1,22 +1,23 @@
 /*
- * aerial-lock-supervisor — owns the locker lifecycle and recovers it.
+ * aerial-lock-supervisor — owns the locker lifecycle; respawn-only recovery.
  *
  * Long-lived child process (the aerial-lock launcher): spawns the locker,
- * respawns it up to three times on abnormal death, then takeover-releases
- * in-process. Never spawns the old bash/QML pair; never links Qt Quick or
- * QML (QtCore + QtDBus + wayland-client only).
+ * respawns it up to three times on abnormal death, and — when respawns run
+ * out — stays locked and escalates loudly. There is NO automatic unlock
+ * anywhere: no path from "at the lock screen" to "inside the session" that
+ * does not go through PAM. The shelved auto-release work (Takeover::run as a
+ * supervisor call path, the escalation gate, probe-based state detection)
+ * lives on the `shelved/auto-release` branch; the manual `aerial-unlock`
+ * binary is unchanged as the ops/TTY tool.
  *
- * Lock state comes from the takeover probe: request a lock and read the
- * compositor's answer (refused ⟺ live holder, granted ⟺ nobody holds it).
- * That is the only signal sourced from the compositor itself, so it
- * survives the quirks that killed LockedHint (never set on niri) and the
- * locker's secure log (never fires on nested niri). A granted probe
- * releases immediately — used only at child-death decision points.
+ * Decision matrix is exit-code only (see plan d29):
+ *   compositor dead  → session over, clean exit (checked FIRST)
+ *   exit 0           → clean unlock / PAM refusal / external invalidation → done
+ *   exit != 0        → respawn under limit; at limit, stay locked + escalate
  */
 #include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
-#include <QDBusInterface>
 #include <QDir>
 #include <QProcess>
 #include <QTextStream>
@@ -28,13 +29,9 @@
 
 #include <wayland-client.h>
 
-#include "takeover.h"
-
 static const int RESPAWN_LIMIT = 3;
 static const int RESPAWN_BACKOFF_MS = 1500;
 static const char *SUPERVISOR_DBUS_NAME = "org.aeriallock.Supervisor";
-
-/* ---- supervisor ---- */
 
 class Supervisor : public QObject
 {
@@ -42,8 +39,6 @@ class Supervisor : public QObject
 public:
     Supervisor()
     {
-        // Singleton: exactly one supervisor on duty, atomic by the bus.
-        // Claimed before the lock-state probe.
         QDBusConnection bus = QDBusConnection::sessionBus();
         if (!bus.interface()->registerService(QString::fromLatin1(SUPERVISOR_DBUS_NAME))) {
             log("another supervisor is on duty — exiting");
@@ -54,18 +49,6 @@ public:
 
         m_lockerCommand = lockerCommandLine();
         m_attempt = 0;
-
-        // Startup probe: if the session is already locked (a previous
-        // supervisor died mid-episode), adopt it by respawning a locker;
-        // otherwise start a fresh episode.
-        Takeover::Outcome startup = Takeover::run(3000);
-        if (startup == Takeover::Outcome::Refused) {
-            log("startup probe: session locked (previous supervisor died "
-                "mid-episode) — adopting");
-            m_adopting = true;
-        } else {
-            log("startup probe: session unlocked — fresh episode");
-        }
         launch();
     }
 
@@ -84,6 +67,17 @@ private:
     {
         m_attempt++;
         m_video = nextVideo();
+
+        // On Hyprland a respawned locker is refused without the
+        // session-lock-restore flag, so set it just-in-time before every
+        // launch there (first or respawn); unset when the episode ends.
+        if (isHyprland() && !m_hyprFlagSet) {
+            if (setHyprlandRestoreFlag(true)) {
+                m_hyprFlagSet = true;
+                log("Hyprland: misc:allow_session_lock_restore set just-in-time");
+            }
+        }
+
         log(QStringLiteral("launching locker, attempt %1/%2%3")
                 .arg(m_attempt).arg(RESPAWN_LIMIT + 1)
                 .arg(m_video.isEmpty() ? QString()
@@ -132,54 +126,31 @@ private:
         log(QStringLiteral("child finished: exit=%1 status=%2")
                 .arg(exitCode).arg(status));
 
-        // Ordering guard (load-bearing): compositor death is checked FIRST,
-        // before any probe. When the compositor dies the locker dies too, and
-        // the two signals can arrive in either order; without this guard a
-        // dead-session "child exit" reads as "locker died → respawn" and the
-        // supervisor spawns a locker into a dead session.
+        // Ordering guard (load-bearing): compositor death is checked FIRST.
+        // When the compositor dies the locker dies too, and the two signals
+        // can arrive in either order; without this guard a dead-session
+        // "child exit" reads as "locker died → respawn" and the supervisor
+        // spawns a locker into a dead session.
         if (!waylandAlive()) {
             log("compositor connection dead — session over, clearing state");
-            QCoreApplication::exit(0);
+            finishEpisode(0);
             return;
         }
 
-        // Probe the lock state: refused ⟺ a live client holds the lock,
-        // granted ⟺ nobody holds it.
-        Takeover::Outcome probe = Takeover::run(3000);
-        bool locked = (probe == Takeover::Outcome::Refused);
-
-        if (exitCode == 0 && !locked) {
-            log("clean unlock — done");
-            QCoreApplication::exit(0);
-            return;
-        }
-        if (exitCode == 0 && locked) {
-            log("child exited 0 but the lock is held by another client — "
-                "not respawning (external takeover)");
-            QCoreApplication::exit(0);
-            return;
-        }
-        if (exitCode != 0 && !locked) {
-            log("child crashed after unlock — not relocking");
-            QCoreApplication::exit(0);
-            return;
-        }
-        // exitCode != 0 && locked → locker died while holding the lock.
-        log("locker died while holding the lock");
-
-        // Escalation gate: a *respawned* instance that reached secure and
-        // then died is suspicious (could be attacker-induced from the lock
-        // UI) — never auto-unlock that. The probe at the moment of death is
-        // the answer: still locked here means engaged-then-died.
-        if (m_attempt > 1) {
-            log("respawned instance was engaged when it died — staying locked, "
-                "escalating to manual recovery only (see README)");
-            QCoreApplication::exit(2);
+        if (exitCode == 0) {
+            // clean unlock / PAM probe refusal (never locked) / external
+            // invalidation (another client owns it) — all mean "do not
+            // respawn".
+            log("clean exit — done");
+            finishEpisode(0);
             return;
         }
 
+        // Abnormal death. The correct response to an abnormal death while
+        // locked is a respawn.
         if (m_attempt < RESPAWN_LIMIT) {
-            log(QStringLiteral("respawning in %1 ms (attempt %2/%3)")
+            log(QStringLiteral("locker died abnormally — respawning in %1 ms "
+                               "(attempt %2/%3)")
                     .arg(RESPAWN_BACKOFF_MS)
                     .arg(m_attempt + 1)
                     .arg(RESPAWN_LIMIT));
@@ -187,51 +158,22 @@ private:
                 launch();
             });
         } else {
-            log("respawn limit reached — in-process takeover");
-            escalate();
+            // Respawns ran out. There is NO automatic unlock — stay locked
+            // and escalate loudly. Manual recovery is aerial-unlock from a
+            // TTY/ops (see README).
+            log("respawn limit reached — staying locked. NO automatic unlock. "
+                "Recover manually: aerial-unlock from a TTY (see README)");
+            finishEpisode(2);
         }
     }
 
-    void escalate()
+    void finishEpisode(int code)
     {
-        // In-process takeover (d26a), never exec'd.
-        log(QStringLiteral("running in-process takeover…"));
-        Takeover::Outcome outcome = Takeover::run(5000);
-
-        // Hyprland legacy-config-manager builds have no
-        // hl.clear_crashed_lockscreen(); the only client-side recovery there
-        // is the allow_session_lock_restore flag, set just-in-time on refusal
-        // then unset. Detect Hyprland by env; niri/sway take the lock
-        // unconditionally.
-        if (outcome == Takeover::Outcome::Refused && isHyprland()) {
-            log(QStringLiteral("takeover refused on Hyprland — setting "
-                               "misc:allow_session_lock_restore just-in-time, "
-                               "retrying, then unsetting"));
-            if (setHyprlandRestoreFlag(true)) {
-                outcome = Takeover::run(5000);
-                setHyprlandRestoreFlag(false);
-            }
+        if (m_hyprFlagSet) {
+            setHyprlandRestoreFlag(false);
+            m_hyprFlagSet = false;
         }
-
-        switch (outcome) {
-        case Takeover::Outcome::Recovered:
-            log(QStringLiteral("takeover recovered the session"));
-            QCoreApplication::exit(0);
-            return;
-        case Takeover::Outcome::Refused:
-            log(QStringLiteral("takeover refused — a live client holds the lock"));
-            QCoreApplication::exit(3);
-            return;
-        case Takeover::Outcome::NoSocket:
-            log(QStringLiteral("takeover: no Wayland socket"));
-            QCoreApplication::exit(1);
-            return;
-        case Takeover::Outcome::Inconclusive:
-            log(QStringLiteral("takeover inconclusive — staying locked, escalate "
-                               "to manual recovery"));
-            QCoreApplication::exit(2);
-            return;
-        }
+        QCoreApplication::exit(code);
     }
 
     // The compositor connection is the ordering guard's source of truth:
@@ -239,14 +181,8 @@ private:
     // dead and the session is over.
     static bool waylandAlive()
     {
-        // A cheap aliveness probe: try to open the display. A dead
-        // compositor fails connect; a live one succeeds.
-        const char *xdg = getenv("XDG_RUNTIME_DIR");
-        if (!xdg || !*xdg) return false;
         const char *disp = getenv("WAYLAND_DISPLAY");
         if (!disp || !*disp) return false;
-        // We deliberately reuse the takeover's socket discovery: connect and
-        // immediately disconnect. Cheap, and correct on both compositors.
         struct wl_display *d = wl_display_connect(disp);
         if (!d) return false;
         wl_display_disconnect(d);
@@ -285,7 +221,7 @@ private:
     QString m_video;
     QString m_lastVideo;
     int m_attempt = 0;
-    bool m_adopting = false;
+    bool m_hyprFlagSet = false;
 };
 
 int main(int argc, char **argv)
