@@ -11,9 +11,6 @@ binds {
     // Launch the locker from this repo.
     Mod+L { spawn "qs" "-p" "@REPO_ROOT@"; }
 
-    // Recovery tool — must work while the session is locked.
-    Mod+E allow-when-locked=true { spawn "@REPO_ROOT@/aerial-emergency-unlock"; }
-
     // Kill switch — spawn is the only bind class niri allows to fire while
     // locked, so the escape kills the locker (releasing the lock) rather
     // than quitting the compositor directly.

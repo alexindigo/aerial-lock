@@ -1,2 +1,6 @@
 #!/bin/sh
-exec qs -p /usr/share/aerial-lock "$@"
+# aerial-lock launches the supervisor, which owns the locker lifecycle:
+# spawns the QML locker, respawns on abnormal death (limit 3), then
+# in-process takeover-release. Set AERIAL_LOCK_SHELL to point the locker at
+# a different shell directory during development.
+exec aerial-lock-supervisor "$@"

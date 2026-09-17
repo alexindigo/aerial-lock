@@ -9,7 +9,6 @@ set -euo pipefail
 # session, with the aerial-lock test binds pre-wired:
 #
 #   Mod+L              launch aerial-lock from this repo
-#   Mod+E              launch aerial-emergency-unlock (works while locked)
 #   Mod+Shift+Escape   kill the aerial-lock locker (works while locked)
 #   Mod+Shift+Q        quit the nested compositor (niri; when unlocked)
 #

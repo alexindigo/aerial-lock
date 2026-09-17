@@ -65,6 +65,17 @@ over bundle defaults.
   to swaylock and hyprlock, which are also auth-only. A plain expired password
   still authenticates correctly.
 
+## Recovery
+
+The supervisor (`aerial-lock-supervisor`, what `aerial-lock` execs) owns the
+locker lifecycle: spawns the QML locker, respawns on abnormal death (limit
+**3**, short backoff), and when respawns run out **stays locked** — there is
+no automatic unlock. Exit `0` means clean unlock / PAM refusal / external
+invalidation; anything else respawns. Manual recovery is `aerial-unlock`
+from a TTY (see the README's "Recovery (last resort)" section for exit codes
+and the per-compositor story). Behaviour is fixed — the respawn limit and
+timeouts are build constants, not configuration.
+
 ## PAM_MAX_RESP_SIZE
 
 This value is derived at build time from `/usr/include/security/_pam_types.h`
