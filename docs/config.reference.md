@@ -76,6 +76,25 @@ from a TTY (see the README's "Recovery (last resort)" section for exit codes
 and the per-compositor story). Behaviour is fixed — the respawn limit and
 timeouts are build constants, not configuration.
 
+## Rate limiting and lockout
+
+Throttling is delegated to the PAM stack. `aerial-lock` adds no client-side
+attempt counter: on `PamResult.MaxTries` the UI shows a message but leaves
+the field enabled, and a fresh attempt starts a **new** PAM transaction with
+a reset counter — retries are effectively unlimited from the client's
+perspective.
+
+This is deliberate, and matches swaylock and hyprlock. A client-side counter
+is bypassed by restarting the locker, so it buys no security against anyone
+who can spawn a process — and a lockout counter in the locker is a new way
+to fail closed: a bug in it locks out the legitimate user permanently.
+Cost with no benefit.
+
+The shipped `/etc/pam.d/aerial-lock` is `auth include login`, so whatever
+policy the system login stack enforces applies here automatically — which is
+what makes delegation sound rather than lazy. Hardening belongs in
+`/etc/pam.d/login` via `pam_faildelay` or `pam_faillock`, not in the locker.
+
 ## PAM_MAX_RESP_SIZE
 
 This value is derived at build time from `/usr/include/security/_pam_types.h`
