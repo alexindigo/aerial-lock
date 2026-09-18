@@ -68,6 +68,13 @@ installed bundle is read.
   expired password's "new password/retype" prompt) are unreachable — identical
   to swaylock and hyprlock, which are also auth-only. A plain expired password
   still authenticates correctly.
+- **Plaintext password lifetime.** The password is held as a QML string
+  (`pendingPassword`): it lives on the JS heap, cannot be zeroed, and a
+  cleared value survives until garbage collection. The property is cleared
+  *before* `respond()` is called, so it holds a value only across the async
+  gap between submit and the first PAM prompt — typically milliseconds. The
+  exposure is narrowed, not eliminated; a real fix needs an `mlock`ed buffer
+  behind a C++ helper.
 
 ## Recovery
 
