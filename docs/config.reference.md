@@ -7,13 +7,15 @@ Bundled defaults are at `/usr/share/aerial-lock/Config/defaults.json`.
 User override at `~/.config/aerial-lock/config.json`.
 
 Each field follows strict JSON types (numbers are numbers, strings are strings,
-objects are objects). A type mismatch anywhere in your config rejects the
-**entire** file — the bundle defaults are used instead; there is no
-per-field fallback. Unknown fields are ignored.
+objects are objects), validated **per field**: a field with the wrong type
+falls back to its own bundle default with a startup warning naming the full
+path (e.g. `panel.widthMax`) — the rest of your config is unaffected.
+Unknown fields are ignored. If the file itself is unparseable, the bundle
+defaults are used in full.
 
-Merging is shallow: a partial `panel` or `colors` object replaces the whole
-object rather than merging into the defaults. (Both behaviours are interim —
-a layered deep merge is planned.)
+Your config is deep-merged onto the bundle defaults: a partial `panel` or
+`colors` object overrides only the fields it names, and omitted sibling
+fields keep their defaults.
 
 ## Fields
 
