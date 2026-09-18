@@ -90,21 +90,6 @@ Scope {
         }
     }
 
-    Process {
-        id: ensureDirProc
-        running: false
-        command: ["mkdir", "-p", root.configDir]
-        onExited: function (code, status) {
-            if (code === 0) {
-                userFile.setText(root.pendingWrite)
-            } else {
-                console.warn("ConfigStore: mkdir -p failed for", root.configDir)
-            }
-        }
-    }
-
-    property string pendingWrite: ""
-
     Component.onCompleted: {
         // waitForJob() returning false means no load was ever queued for the
         // path — a structural defect, not a slow disk. With blockLoading the
@@ -150,8 +135,11 @@ Scope {
                 merged = defaults
             }
         } else {
-            pendingWrite = defaultsRaw
-            ensureDirProc.running = true
+            // First launch: seed the user config with the shipped defaults.
+            // FileView's writer creates missing parent directories itself
+            // (FileViewWriter::write() mkpaths), so no mkdir scaffolding;
+            // a failed write surfaces via onSaveFailed above.
+            userFile.setText(defaultsRaw)
         }
 
         loadI18n(merged.language || "en")
