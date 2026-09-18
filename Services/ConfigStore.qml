@@ -35,7 +35,6 @@ Scope {
         language: "string",
         backgroundColor: "string",
         pamService: "string",
-        fadeMs: "number",
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",
         debugAllowDismiss: "boolean",
