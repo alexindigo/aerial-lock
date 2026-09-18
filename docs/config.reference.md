@@ -7,8 +7,13 @@ Bundled defaults are at `/usr/share/aerial-lock/Config/defaults.json`.
 User override at `~/.config/aerial-lock/config.json`.
 
 Each field follows strict JSON types (numbers are numbers, strings are strings,
-objects are objects). Type mismatches cause the field to fall back to its
-bundle default.
+objects are objects). A type mismatch anywhere in your config rejects the
+**entire** file — the bundle defaults are used instead; there is no
+per-field fallback. Unknown fields are ignored.
+
+Merging is shallow: a partial `panel` or `colors` object replaces the whole
+object rather than merging into the defaults. (Both behaviours are interim —
+a layered deep merge is planned.)
 
 ## Fields
 
@@ -19,7 +24,6 @@ bundle default.
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
-| `fadeMs`           | number  | `300`            | Fade-out duration on unlock, in milliseconds   |
 | `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
 | `debugAllowDismiss`| boolean | `false`          | **INSECURE** — show dismiss button (dev only)  |
 
@@ -51,11 +55,11 @@ bundle default.
 ## I18n
 
 `Config/i18n/en.json` ships with English strings. Set `"language"` to load a
-different file (e.g. `"ru"` for `i18n/ru.json`). Falls back to `en` if the
-requested language is missing.
+different bundled file (`Config/i18n/<lang>.json`). Falls back to `en` if the
+requested file is missing or unparseable.
 
-User overrides at `~/.config/aerial-lock/i18n/<lang>.json` take precedence
-over bundle defaults.
+User-supplied translation files are **not yet supported** — only the
+installed bundle is read.
 
 ## Known limitations
 
@@ -135,7 +139,6 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
   "language": "en",
   "backgroundColor": "#1a1a2e",
   "pamService": "login",
-  "fadeMs": 200,
   "fallbackQuitMs": 3000,
   "debugAllowDismiss": false,
   "panel": {

@@ -1,25 +1,23 @@
 # aerial-lock
 
-Wayland session-lock client with Apple Aerial-style video backgrounds.
+Wayland session-lock client: PAM authentication over a solid background,
+with layered JSON config and i18n. Planned future work is listed under
+[Roadmap](#roadmap).
 
-Targets `ext-session-lock-v1`. Primary compositor: Niri. Also works with
-Hyprland, Sway >= 1.9, KDE KWin >= 6.0, Cosmic. Not compatible with GNOME.
+Targets `ext-session-lock-v1`. Developed and tested on Niri; other
+compositors are untested — see [Compositor support](#compositor-support).
+Not compatible with GNOME.
 
 ## Installation
 
-### Arch Linux (AUR)
-
-```
-yay -S aerial-lock
-```
-
-### Manual
+Not yet packaged for any distribution — install from this repo:
 
 ```
 sudo make install
 ```
 
-Requires [quickshell](https://github.com/outfoxxed/quickshell).
+Runtime requirement: [Quickshell](https://github.com/outfoxxed/quickshell)
+(any build — not tied to a specific fork).
 
 ### Build-time PAM_MAX_RESP_SIZE override
 
@@ -83,15 +81,23 @@ See [`docs/config.reference.md`](docs/config.reference.md) for available options
 
 ## Compositor support
 
-| Compositor       | Status          |
-|------------------|-----------------|
-| Niri             | Supported       |
-| Hyprland         | Supported       |
-| Sway >= 1.9      | Supported       |
-| KDE KWin >= 6.0  | Supported       |
-| Cosmic           | Supported       |
-| river / Wayfire  | Likely works    |
-| GNOME / Mutter   | Not supported   |
+Two separate questions: does the compositor implement
+`ext-session-lock-v1`, and has aerial-lock been run on it?
+
+| Compositor       | Protocol  | aerial-lock |
+|------------------|-----------|-------------|
+| Niri             | Yes       | Tested      |
+| Hyprland         | Yes       | Untested    |
+| Sway >= 1.9      | Yes       | Untested    |
+| KDE KWin >= 6.0  | Yes       | Untested    |
+| Cosmic           | Yes       | Untested    |
+| river / Wayfire  | Probably  | Untested    |
+| GNOME / Mutter   | No        | —           |
+
+Recovery from a crashed locker is compositor **policy**, not a protocol
+guarantee: `ext-session-lock-v1` says a compositor *may* let a new client
+take over a dead lock. Niri does; other compositors still need verifying —
+see the per-compositor notes under [Recovery](#recovery-last-resort).
 
 ## Recovery (last resort)
 
@@ -158,12 +164,13 @@ start at all, recovery is manual (this section). A compositor-side minimal
 emergency locker (the KDE pattern) is recorded as the future answer for that
 strand case.
 
-## License
-  applicable.
+## Roadmap
 
-`loginctl unlock-session` does **not** work anywhere — lock state lives in
-the compositor, not logind. "Correct password always fails" is a different
-symptom (`pam_faillock`); fix with `sudo faillock --reset`.
+Planned, in rough order: video backgrounds (the Apple Aerial use case —
+fetch, cache, and rotate videos behind the lock panel), compositor
+integrations (idle/suspend/session events), then distribution (AUR
+packaging, systemd unit). The detailed phase list lives in the project's
+planning documents; nothing shipped today depends on unshipped features.
 
 ## License
 
