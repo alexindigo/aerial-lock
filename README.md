@@ -30,12 +30,6 @@ at build time. To force a specific value (cross-compilation, hardened distros):
 make PAM_MAX_RESP_SIZE=1024
 ```
 
-Or when building the AUR package:
-
-```
-PAM_MAX_RESP_SIZE=1024 makepkg -si
-```
-
 ## Usage
 
 Bind a key in your compositor config:
