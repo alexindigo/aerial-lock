@@ -66,18 +66,21 @@ Scope {
     FileView {
         id: defaultsFile
         path: defaultsPath
+        blockLoading: true
         printErrors: true
     }
 
     FileView {
         id: i18nFile
         path: ""
+        blockLoading: true
         printErrors: false
     }
 
     FileView {
         id: userFile
         path: configPath
+        blockLoading: true
         atomicWrites: true
         printErrors: false
 
@@ -103,8 +106,16 @@ Scope {
     property string pendingWrite: ""
 
     Component.onCompleted: {
-        defaultsFile.waitForJob()
-        userFile.waitForJob()
+        // waitForJob() returning false means no load was ever queued for the
+        // path — a structural defect, not a slow disk. With blockLoading the
+        // reads below are definitive either way: empty means genuinely missing
+        // or unreadable, never "not loaded yet".
+        if (!defaultsFile.waitForJob()) {
+            console.warn("ConfigStore: no load job was queued for", defaultsPath)
+        }
+        if (!userFile.waitForJob()) {
+            console.warn("ConfigStore: no load job was queued for", configPath)
+        }
         initialize()
     }
 
@@ -150,7 +161,9 @@ Scope {
 
     function loadI18n(lang) {
         i18nFile.path = i18nDir + "/" + lang + ".json"
-        i18nFile.waitForJob()
+        if (!i18nFile.waitForJob()) {
+            console.warn("ConfigStore: no load job was queued for", i18nFile.path)
+        }
         var raw = i18nFile.text()
         if (raw && raw.length > 0) {
             try {
@@ -168,7 +181,9 @@ Scope {
 
         console.warn("ConfigStore: i18n file not found for " + lang + "; trying en fallback")
         i18nFile.path = i18nDir + "/en.json"
-        i18nFile.waitForJob()
+        if (!i18nFile.waitForJob()) {
+            console.warn("ConfigStore: no load job was queued for", i18nFile.path)
+        }
         raw = i18nFile.text()
         if (raw && raw.length > 0) {
             try {

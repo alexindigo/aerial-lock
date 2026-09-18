@@ -17,11 +17,18 @@ Scope {
     FileView {
         id: limitsFile
         path: limitsPath
+        blockLoading: true
         printErrors: false
     }
 
     Component.onCompleted: {
-        limitsFile.waitForJob()
+        // waitForJob() returning false means no load was ever queued for the
+        // path — a structural defect, not a slow disk. With blockLoading the
+        // read below is definitive either way: empty means genuinely missing
+        // or unreadable, never "not loaded yet".
+        if (!limitsFile.waitForJob()) {
+            console.warn("PamLimits: no load job was queued for", limitsPath)
+        }
         var raw = limitsFile.text()
         if (raw && raw.length > 0) {
             try {
