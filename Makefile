@@ -10,19 +10,23 @@ PAM_MAX_RESP_SIZE ?=
 WAYLAND_PROTOCOLS ?= /usr/share/wayland-protocols
 SESSION_LOCK_XML := $(WAYLAND_PROTOCOLS)/staging/ext-session-lock/ext-session-lock-v1.xml
 
-.PHONY: all install uninstall dev clean
+.PHONY: all install uninstall dev clean pam-limits
 
-all: Config/pam-limits.json recovery/aerial-unlock supervisor/aerial-lock-supervisor
+all: pam-limits recovery/aerial-unlock supervisor/aerial-lock-supervisor
 
-Config/pam-limits.json: gen-pam-limits.c
+# Phony on purpose: the value can come from the environment, which Make
+# cannot express as a file prerequisite. The generator is sub-second, so
+# unconditional regeneration removes the stale-artifact bug class for free.
+pam-limits:
 ifdef PAM_MAX_RESP_SIZE
 	@printf '{"maxResponseSize": %d, "source": "build-override"}\n' \
-		$(PAM_MAX_RESP_SIZE) > $@
+		$(PAM_MAX_RESP_SIZE) > Config/pam-limits.json
 else
 	@$(CC) -o gen-pam-limits.tmp gen-pam-limits.c
-	@./gen-pam-limits.tmp > $@
+	@./gen-pam-limits.tmp > Config/pam-limits.json
 	@rm -f gen-pam-limits.tmp
 endif
+	@cat Config/pam-limits.json
 
 recovery/ext-session-lock-v1-client.h: $(SESSION_LOCK_XML)
 	wayland-scanner client-header $< $@
