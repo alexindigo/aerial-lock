@@ -38,8 +38,25 @@ Scope {
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",
         debugAllowDismiss: "boolean",
-        panel: "object",
-        colors: "object"
+        panel: ({
+            widthMax: "number",
+            fieldHeight: "number",
+            radius: "number",
+            fieldRadius: "number",
+            outerMargin: "number",
+            spacing: "number",
+            fontSize: "number"
+        }),
+        colors: ({
+            text: "string",
+            textError: "string",
+            input: "string",
+            panelFill: "string",
+            panelBorder: "string",
+            fieldFill: "string",
+            fieldBorderFocused: "string",
+            fieldBorder: "string"
+        })
     })
 
     PamLimits {
@@ -104,25 +121,22 @@ Scope {
             return
         }
 
-        if (!validateSchema(defaults)) {
+        if (!checkBundle(defaults, root.schema, "")) {
             fail("Bundle defaults.json failed schema validation")
             return
         }
 
-        var merged = Object.assign({}, defaults)
+        var merged = defaults
 
         var userRaw = userFile.text()
         if (userRaw && userRaw.length > 0) {
             try {
                 var user = JSON.parse(userRaw)
-                var candidate = Object.assign({}, defaults, user)
-                if (validateSchema(candidate)) {
-                    merged = candidate
-                } else {
-                    console.warn("ConfigStore: user config.json failed schema validation; using defaults")
-                }
+                merged = deepMerge(defaults, user)
+                sanitise(merged, defaults, root.schema, "")
             } catch (e) {
                 console.warn("ConfigStore: user config.json parse error (" + e + "); using defaults")
+                merged = defaults
             }
         } else {
             pendingWrite = defaultsRaw
@@ -168,23 +182,71 @@ Scope {
         root.i18n = {}
     }
 
-    function validateSchema(data) {
-        for (var key in root.schema) {
-            if (!(key in data)) {
-                console.warn("ConfigStore: schema validation — missing field: " + key)
-                return false
+    function isPlainObject(v) {
+        return v !== null && typeof v === "object" && !Array.isArray(v)
+    }
+
+    // Every base key exists in the result; an override wins leaf-by-leaf,
+    // recursing only when both sides are plain objects. Unknown override
+    // keys are carried but unread.
+    function deepMerge(base, override) {
+        var result = {}
+        for (var key in base) result[key] = base[key]
+        for (var okey in override) {
+            if (isPlainObject(base[okey]) && isPlainObject(override[okey])) {
+                result[okey] = deepMerge(base[okey], override[okey])
+            } else {
+                result[okey] = override[okey]
             }
-            var expected = root.schema[key]
-            var actual = typeof data[key]
-            if (expected === "boolean") {
-                if (actual !== "boolean") {
-                    console.warn("ConfigStore: schema validation — field " + key +
-                                 " has wrong type (expected boolean)")
+        }
+        return result
+    }
+
+    // Per-field type repair, never whole-config rejection: a wrong-typed
+    // value falls back to its own default with a warning naming the path.
+    function sanitise(candidate, defaults, spec, path) {
+        for (var key in spec) {
+            var fullPath = path === "" ? key : path + "." + key
+            if (isPlainObject(spec[key])) {
+                if (isPlainObject(candidate[key])) {
+                    sanitise(candidate[key], defaults[key], spec[key], fullPath)
+                } else {
+                    warnSubtree(spec[key], fullPath)
+                    candidate[key] = defaults[key]
+                }
+            } else if (typeof candidate[key] !== spec[key]) {
+                console.warn("ConfigStore: " + fullPath + " has wrong type (expected "
+                             + spec[key] + ", got " + typeof candidate[key] + "); using default")
+                candidate[key] = defaults[key]
+            }
+        }
+    }
+
+    function warnSubtree(spec, path) {
+        for (var key in spec) {
+            var fullPath = path + "." + key
+            if (isPlainObject(spec[key])) {
+                warnSubtree(spec[key], fullPath)
+            } else {
+                console.warn("ConfigStore: " + fullPath + " has wrong type (expected "
+                             + spec[key] + "); using default")
+            }
+        }
+    }
+
+    // Bundle defaults are ours: a broken defaults.json is a build bug, so it
+    // still fails closed rather than limping along half-initialised.
+    function checkBundle(data, spec, path) {
+        for (var key in spec) {
+            var fullPath = path === "" ? key : path + "." + key
+            if (isPlainObject(spec[key])) {
+                if (!isPlainObject(data[key]) || !checkBundle(data[key], spec[key], fullPath)) {
+                    console.warn("ConfigStore: bundle defaults invalid at " + fullPath)
                     return false
                 }
-            } else if (actual !== expected) {
-                console.warn("ConfigStore: schema validation — field " + key +
-                             " has wrong type (expected " + expected + ", got " + actual + ")")
+            } else if (typeof data[key] !== spec[key]) {
+                console.warn("ConfigStore: bundle defaults invalid at " + fullPath
+                             + " (expected " + spec[key] + ", got " + typeof data[key] + ")")
                 return false
             }
         }
