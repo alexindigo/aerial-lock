@@ -68,6 +68,7 @@ install: all
 	install -m 644 Modules/Lock/LockContent.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Services/ConfigStore.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/PamLimits.qml $(DESTDIR)$(DATADIR)/Services/
+	install -m 644 Services/PamProbe.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Config/defaults.json $(DESTDIR)$(CONFDIR)/
 	install -m 644 Config/pam-limits.json $(DESTDIR)$(CONFDIR)/
 	install -m 644 Config/i18n/en.json $(DESTDIR)$(I18NDIR)/
