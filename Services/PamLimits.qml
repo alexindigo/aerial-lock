@@ -5,15 +5,14 @@ import Quickshell.Io
 Scope {
     id: root
 
-    property int maxResponseSize: 512
-    property string source: "fallback"
-    property bool loaded: false
+    // 0 = unknown. There is no fallback number: the field cap is a
+    // convenience (stopping the user typing more than PAM will accept),
+    // never a security control, so when the real limit is unknown
+    // asserting one would be fabrication.
+    property int maxResponseSize: 0
+    property string source: ""   // provenance, for logging only
 
     readonly property string limitsPath: Quickshell.shellDir + "/Config/pam-limits.json"
-
-    readonly property string cHeaderSource: "c-header from /usr/include/security/_pam_types.h at build time"
-    readonly property string overrideSource: "build-override, forced via make PAM_MAX_RESP_SIZE"
-    readonly property string fallbackSource: "fallback, pam-limits.json corrupt or missing"
 
     FileView {
         id: limitsFile
@@ -29,29 +28,28 @@ Scope {
                 var data = JSON.parse(raw)
                 if (data && typeof data.maxResponseSize === "number" && data.maxResponseSize > 0) {
                     root.maxResponseSize = data.maxResponseSize
-                    root.source = data.source || "fallback"
-                    root.loaded = true
+                    root.source = data.source || "pam-limits.json"
                     log()
                     return
                 }
+                root.source = "pam-limits.json has no positive maxResponseSize"
             } catch (e) {
+                root.source = "pam-limits.json unparseable"
                 console.warn("PamLimits: failed to parse", limitsPath, ":", e)
             }
+        } else {
+            root.source = "pam-limits.json missing"
         }
-        root.maxResponseSize = 256
-        root.source = fallbackSource
-        root.loaded = true
         log()
     }
 
     function log() {
-        var msg = "PAM_MAX_RESP_SIZE=" + root.maxResponseSize + " (source: " + root.source + ")"
-        if (root.source.startsWith("c-header") && root.maxResponseSize !== 512) {
-            msg += " — differs from Linux-PAM default (512)"
+        if (root.maxResponseSize > 0) {
+            console.log("aerial-lock: PAM_MAX_RESP_SIZE=" + root.maxResponseSize
+                        + " (source: " + root.source + ")")
+        } else {
+            console.warn("aerial-lock: PAM response size unknown (" + root.source
+                         + ") — password field uncapped; run make to derive it")
         }
-        if (root.source.startsWith("fallback")) {
-            msg += " — rebuild: make clean && make, or force: make PAM_MAX_RESP_SIZE=<n>"
-        }
-        console.log("aerial-lock:", msg)
     }
 }

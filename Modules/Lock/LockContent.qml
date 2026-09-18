@@ -15,7 +15,7 @@ FocusScope {
     readonly property var i18n: config.i18n || {}
     readonly property var panel: configData.panel || {}
     readonly property var colors: configData.colors || {}
-    readonly property int maxResponseSize: config.pamLimits ? config.pamLimits.maxResponseSize : 512
+    readonly property int maxResponseSize: config.pamLimits.maxResponseSize
 
     signal passwordSubmitted(string password)
     signal dismissRequested()
@@ -94,7 +94,10 @@ FocusScope {
                     passwordMaskDelay: 0
                     enabled: !root.unlockInProgress
                     focus: true
-                    maximumLength: root.maxResponseSize
+                    // PAM_MAX_RESP_SIZE counts the NUL terminator, hence -1.
+                    // 0 means the real limit is unknown: cap at SHRT_MAX, the
+                    // widget's own ceiling — never at a guessed PAM value.
+                    maximumLength: root.maxResponseSize > 0 ? root.maxResponseSize - 1 : 32767
 
                     Keys.onPressed: function (event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
