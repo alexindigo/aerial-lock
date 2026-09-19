@@ -117,9 +117,9 @@ FocusScope {
                 }
                 height: panel.fieldHeight || 40
                 radius: panel.fieldRadius || 8
-                color: Qt.rgba(255, 80, 80, 0.15)
+                color: Qt.rgba(1, 0.31, 0.31, 0.15)
                 border.width: 1
-                border.color: Qt.rgba(255, 80, 80, 0.3)
+                border.color: Qt.rgba(1, 0.31, 0.31, 0.3)
                 visible: config.buildFlags.debugAllowDismiss
 
                 Text {
