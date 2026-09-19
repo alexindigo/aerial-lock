@@ -13,6 +13,7 @@ Scope {
     property var i18n: ({})
 
     readonly property alias pamLimits: pamLimitsObj
+    readonly property alias buildFlags: buildFlagsObj
 
     readonly property string configDir: {
         var xdg = Quickshell.env("XDG_CONFIG_HOME")
@@ -37,7 +38,6 @@ Scope {
         pamService: "string",
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",
-        debugAllowDismiss: "boolean",
         panel: ({
             widthMax: "number",
             fieldHeight: "number",
@@ -61,6 +61,10 @@ Scope {
 
     PamLimits {
         id: pamLimitsObj
+    }
+
+    BuildFlags {
+        id: buildFlagsObj
     }
 
     FileView {

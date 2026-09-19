@@ -61,12 +61,19 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
 
 ### Testing
 
-For development testing, enable the debug dismiss button:
+For development testing, build and run with the debug flags:
 
-1. Edit `~/.config/aerial-lock/config.json`
-2. Set `"debugAllowDismiss": true`
-3. Launch aerial-lock — a "Dismiss (debug)" button appears that unlocks without authentication
-4. **Never enable this on a production system**
+```
+make dev
+```
+
+`make dev` builds with `DEBUG_DISMISS=1` (a "Dismiss (debug)" button that
+unlocks without authentication) and `DEBUG_VERBOSE=1`, then launches from the
+repo. Both flags land in the build-generated, root-owned
+`Config/build-flags.json` — a dev build prints a startup warning when the
+bypass is enabled. Release builds (`make`) always set both flags `false`;
+**user configuration cannot enable the bypass.** For a chatty build without
+the bypass: `make DEBUG_VERBOSE=1`.
 
 ## Configuration
 

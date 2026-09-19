@@ -120,7 +120,7 @@ FocusScope {
                 color: Qt.rgba(255, 80, 80, 0.15)
                 border.width: 1
                 border.color: Qt.rgba(255, 80, 80, 0.3)
-                visible: configData.debugAllowDismiss || false
+                visible: config.buildFlags.debugAllowDismiss
 
                 Text {
                     anchors.centerIn: parent

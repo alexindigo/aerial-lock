@@ -4,7 +4,6 @@
   "pamService": "aerial-lock",
   "fallbackQuitMs": 3000,
   "pamWatchdogTimeoutMs": 60000,
-  "debugAllowDismiss": false,
   "panel": {
     "widthMax": 360,
     "fieldHeight": 40,

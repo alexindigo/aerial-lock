@@ -27,7 +27,6 @@ fields keep their defaults.
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
 | `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
-| `debugAllowDismiss`| boolean | `false`          | **INSECURE** — show dismiss button (dev only)  |
 
 ### `panel` (object)
 
@@ -124,11 +123,11 @@ rebuild the package.
 
 ## Debug / development
 
-### `debugAllowDismiss`
-
-Setting to `true` adds a "Dismiss (debug)" button that bypasses all
-authentication. **This is a security risk.** Only enable during development
-or testing, and never on a production system.
+Debug behaviour is a **build-time** property, not user configuration: `make`
+writes `Config/build-flags.json` (root-owned when installed) with
+`debugAllowDismiss` and `verbose`, both `false` in release builds.
+`make dev` sets both `true` — the dismiss button bypasses authentication, so a
+dev build prints a startup warning. A user config cannot enable either flag.
 
 ### Environment overrides
 
@@ -149,7 +148,6 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
   "backgroundColor": "#1a1a2e",
   "pamService": "login",
   "fallbackQuitMs": 3000,
-  "debugAllowDismiss": false,
   "panel": {
     "widthMax": 400,
     "fieldHeight": 44,

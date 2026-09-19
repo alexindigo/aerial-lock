@@ -4,6 +4,7 @@ __quickshell_cache/
 
 # Build artifacts
 Config/pam-limits.json
+Config/build-flags.json
 gen-pam-limits.tmp
 
 # Editor

@@ -16,7 +16,8 @@ testing happens inside the project's test-VM fork
 - `grim`, `wtype`, `ydotool` for observation and automation
 - aerial-lock from this repo at `~/aerial-lock`, with `make install` run
   (installs `/etc/pam.d/aerial-lock`, `/usr/bin/aerial-lock`)
-- `~/.config/aerial-lock/config.json` containing `{"debugAllowDismiss": true}`
+- A dev build when the dismiss button is needed (`make dev` sets
+  `DEBUG_DISMISS=1`; release builds cannot show the button)
 - A known password for the session user (PAM is real in the sandbox)
 - `ydotoold` running as root with a world-readable socket:
   `sudo systemd-run --unit=ydotoold /usr/bin/ydotoold --socket-path=/run/ydotoold.sock --socket-perm=0666`
@@ -54,8 +55,8 @@ in every state, independent of any bind.
 
 ### T1: lock engages
 Fire the launch bind. All nested outputs turn solid black (default
-config); the panel (password field + status label) appears centered; with
-`debugAllowDismiss` the red "Dismiss (debug)" button is visible.
+config); the panel (password field + status label) appears centered; on a
+dev build the red "Dismiss (debug)" button is visible.
 
 ### T2: dismiss button
 Click "Dismiss (debug)" — the lock should release and the locker exit.

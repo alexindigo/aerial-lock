@@ -53,7 +53,7 @@ Scope {
 
                 onDismissRequested: {
                     log("onDismissRequested received")
-                    if (root.config.data && root.config.data.debugAllowDismiss) {
+                    if (root.config.buildFlags.debugAllowDismiss) {
                         root.attemptCancelled = true
                         pam.abort()
                         log("dismiss: setting root.locked = false")
