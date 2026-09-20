@@ -138,15 +138,4 @@ FocusScope {
         }
     }
 
-    MouseArea {
-        anchors.fill: parent
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
-        onPositionChanged: {
-            if (!passwordField.activeFocus) {
-                passwordField.forceActiveFocus()
-            }
-        }
-    }
-
 }
