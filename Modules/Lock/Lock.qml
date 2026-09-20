@@ -21,8 +21,18 @@ Scope {
 
     readonly property var i18n: config.i18n || {}
 
+    property string panelScreenName: ""
+
+    function resolvePanelScreen() {
+        var screens = Quickshell.screens
+        if (!screens || screens.length === 0)
+            return ""
+        return screens[0].name
+    }
+
     Component.onCompleted: {
         logger.d("Lock", "Component.onCompleted")
+        root.panelScreenName = root.resolvePanelScreen()
         statusMessage = i18n.prompt || "Enter password"
     }
 
@@ -34,8 +44,18 @@ Scope {
             id: lockSurface
             color: config.data ? config.data.backgroundColor : "#000000"
 
+            readonly property bool hostsPanel: {
+                if (!Quickshell.screens || Quickshell.screens.length <= 1)
+                    return true
+                return lockSurface.screen
+                       && lockSurface.screen.name === root.panelScreenName
+            }
+
             LockContent {
                 anchors.fill: parent
+                visible: lockSurface.hostsPanel
+                enabled: lockSurface.hostsPanel
+                focus: lockSurface.hostsPanel
                 statusMessage: root.statusMessage
                 unlockInProgress: root.unlockInProgress
                 responseVisible: pam.responseVisible
