@@ -12,10 +12,10 @@ FocusScope {
     property bool unlockInProgress: false
     property bool responseVisible: false
 
-    readonly property var configData: config.data || {}
-    readonly property var i18n: config.i18n || {}
-    readonly property var panel: configData.panel || {}
-    readonly property var colors: configData.colors || {}
+    readonly property var configData: config.data
+    readonly property var i18n: config.i18n
+    readonly property var panel: configData.panel
+    readonly property var colors: configData.colors
     readonly property int maxResponseSize: config.pamLimits.maxResponseSize
 
     signal passwordSubmitted(string password)
@@ -39,12 +39,12 @@ FocusScope {
     Rectangle {
         id: panelRect
         anchors.centerIn: parent
-        width: Math.min(panel.widthMax || 360, root.width * 0.8)
-        height: column.implicitHeight + (panel.outerMargin || 20) * 2
-        radius: panel.radius || 12
-        color: colors.panelFill || "#14ffffff"
+        width: Math.min(panel.widthMax, root.width * 0.8)
+        height: column.implicitHeight + panel.outerMargin * 2
+        radius: panel.radius
+        color: colors.panelFill
         border.width: 1
-        border.color: colors.panelBorder || "#1fffffff"
+        border.color: colors.panelBorder
 
         Column {
             id: column
@@ -52,17 +52,17 @@ FocusScope {
                 left: parent.left
                 right: parent.right
                 verticalCenter: parent.verticalCenter
-                margins: panel.outerMargin || 20
+                margins: panel.outerMargin
             }
-            spacing: panel.spacing || 12
+            spacing: panel.spacing
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: root.statusMessage
                 color: root.isErrorState
-                    ? (colors.textError || "#ff5555")
-                    : (colors.text || "#dddddd")
-                font.pixelSize: panel.fontSize || 16
+                    ? colors.textError
+                    : colors.text
+                font.pixelSize: panel.fontSize
                 horizontalAlignment: Text.AlignHCenter
             }
 
@@ -72,13 +72,13 @@ FocusScope {
                     left: parent.left
                     right: parent.right
                 }
-                height: panel.fieldHeight || 40
-                radius: panel.fieldRadius || 8
-                color: colors.fieldFill || "#0fffffff"
+                height: panel.fieldHeight
+                radius: panel.fieldRadius
+                color: colors.fieldFill
                 border.width: 1
                 border.color: passwordField.activeFocus
-                    ? (colors.fieldBorderFocused || "#40ffffff")
-                    : (colors.fieldBorder || "#1affffff")
+                    ? colors.fieldBorderFocused
+                    : colors.fieldBorder
 
                 TextInput {
                     id: passwordField
@@ -87,8 +87,8 @@ FocusScope {
                         margins: 12
                     }
                     verticalAlignment: TextInput.AlignVCenter
-                    color: colors.input || "#ffffff"
-                    font.pixelSize: panel.fontSize || 16
+                    color: colors.input
+                    font.pixelSize: panel.fontSize
                     echoMode: responseVisible ? TextInput.Normal : TextInput.Password
                     passwordMaskDelay: 0
                     enabled: !root.unlockInProgress
@@ -113,8 +113,8 @@ FocusScope {
                     left: parent.left
                     right: parent.right
                 }
-                height: panel.fieldHeight || 40
-                radius: panel.fieldRadius || 8
+                height: panel.fieldHeight
+                radius: panel.fieldRadius
                 color: Qt.rgba(1, 0.31, 0.31, 0.15)
                 border.width: 1
                 border.color: Qt.rgba(1, 0.31, 0.31, 0.3)
@@ -123,8 +123,8 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     text: i18n.dismissDebug || "Dismiss (debug)"
-                    color: colors.textError || "#ff5555"
-                    font.pixelSize: panel.fontSize || 16
+                    color: colors.textError
+                    font.pixelSize: panel.fontSize
                 }
 
                 MouseArea {

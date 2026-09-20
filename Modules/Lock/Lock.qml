@@ -32,7 +32,7 @@ Scope {
             || authState === authMaxTries
             || authState === authError
 
-    readonly property var i18n: config.i18n || {}
+    readonly property var i18n: config.i18n
 
     property string panelScreenName: ""
 
@@ -56,7 +56,7 @@ Scope {
 
         WlSessionLockSurface {
             id: lockSurface
-            color: config.data ? config.data.backgroundColor : "#000000"
+            color: config.data.backgroundColor
 
             readonly property bool hostsPanel: {
                 if (!Quickshell.screens || Quickshell.screens.length <= 1)
