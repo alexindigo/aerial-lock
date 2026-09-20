@@ -35,12 +35,7 @@ Scope {
             color: config.data ? config.data.backgroundColor : "#000000"
 
             LockContent {
-                anchors.centerIn: parent
-                width: Math.min(
-                    config.data && config.data.panel ? config.data.panel.widthMax : 360,
-                    parent.width * 0.8
-                )
-                height: Math.min(120, parent.height * 0.5)
+                anchors.fill: parent
                 statusMessage: root.statusMessage
                 unlockInProgress: root.unlockInProgress
                 responseVisible: pam.responseVisible
