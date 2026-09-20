@@ -18,6 +18,18 @@ Scope {
     property bool unlockInProgress: false
     property bool attemptCancelled: false
     property string statusMessage: ""
+    property int authState: authIdle
+
+    readonly property int authIdle: 0
+    readonly property int authPrompting: 1
+    readonly property int authAuthenticating: 2
+    readonly property int authFailed: 3
+    readonly property int authMaxTries: 4
+    readonly property int authError: 5
+    readonly property int authSuccess: 6
+    readonly property bool authIsError: authState === authFailed
+            || authState === authMaxTries
+            || authState === authError
 
     readonly property var i18n: config.i18n || {}
 
@@ -33,6 +45,7 @@ Scope {
     Component.onCompleted: {
         logger.d("Lock", "Component.onCompleted")
         root.panelScreenName = root.resolvePanelScreen()
+        authState = authPrompting
         statusMessage = i18n.prompt || "Enter password"
     }
 
@@ -61,6 +74,7 @@ Scope {
                 responseVisible: pam.responseVisible
                 config: root.config
                 logger: root.logger
+                isErrorState: root.authIsError
 
                 onPasswordSubmitted: function (password) {
                     root.tryUnlock(password)
@@ -101,11 +115,13 @@ Scope {
                     pendingPassword = ""
                     pam.respond(pw)
                     unlockInProgress = true
+                    authState = authAuthenticating
                     statusMessage = i18n.authenticating || "Authenticating..."
                 } else {
                     // Phase 2: PAM wants something else — surface its own
                     // message and wait for the user.
                     unlockInProgress = false       // waiting on USER, not PAM
+        authState = authPrompting
                     if (message && message.length > 0) {
                         statusMessage = message
                     }
@@ -130,8 +146,9 @@ Scope {
             }
             logger.d("Lock", "PamContext.onCompleted: result=" + result +
                 " (Success=" + PamResult.Success + ")")
-            if (result === PamResult.Success) {
+                if (result === PamResult.Success) {
                 unlockInProgress = false
+                authState = authSuccess
                 statusMessage = i18n.unlocked || "Unlocked"
                 logger.d("Lock", "PAM Success: setting root.locked = false")
                 root.locked = false
@@ -139,8 +156,10 @@ Scope {
                 unlockInProgress = false
                 pendingPassword = ""
                 if (result === PamResult.MaxTries) {
+                    authState = authMaxTries
                     statusMessage = i18n.maxTries || "Too many attempts"
                 } else {
+                    authState = authFailed
                     statusMessage = i18n.authFailed || "Authentication failed"
                 }
             }
@@ -154,6 +173,7 @@ Scope {
             }
             unlockInProgress = false
             pendingPassword = ""
+            authState = authError
             statusMessage = i18n.authError || "Authentication error"
         }
     }
@@ -174,6 +194,7 @@ Scope {
             pam.abort()
             unlockInProgress = false
             pendingPassword = ""
+            authState = authError
             statusMessage = i18n.timedOut || "Authentication timed out — try again"
         }
     }
@@ -221,6 +242,7 @@ Scope {
             pendingPassword = ""
             pam.respond(response)
             unlockInProgress = true
+            authState = authAuthenticating
             statusMessage = i18n.authenticating || "Authenticating..."
             watchdog.restart()
         } else {
@@ -230,8 +252,11 @@ Scope {
             if (!pam.start()) {
                 watchdog.stop()
                 pendingPassword = ""
+                authState = authError
                 statusMessage = i18n.authError || "Authentication error"
                 logger.w("aerial-lock", "pam.start() failed for service " + pam.config)
+            } else {
+                authState = authAuthenticating
             }
         }
     }

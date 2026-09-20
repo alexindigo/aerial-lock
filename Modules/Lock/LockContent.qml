@@ -7,6 +7,7 @@ FocusScope {
 
     required property QtObject config
     required property QtObject logger
+    required property bool isErrorState
 
     property string statusMessage: ""
     property bool unlockInProgress: false
@@ -59,7 +60,7 @@ FocusScope {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: root.statusMessage
-                color: root.statusMessage === (i18n.authFailed || "Authentication failed")
+                color: root.isErrorState
                     ? (colors.textError || "#ff5555")
                     : (colors.text || "#dddddd")
                 font.pixelSize: panel.fontSize || 16
