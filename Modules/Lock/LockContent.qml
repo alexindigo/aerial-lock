@@ -101,7 +101,6 @@ FocusScope {
 
                     Keys.onPressed: function (event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            log("Enter pressed, len=" + text.length)
                             root.passwordSubmitted(text)
                             text = ""
                             event.accepted = true
