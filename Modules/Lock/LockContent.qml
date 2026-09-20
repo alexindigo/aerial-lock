@@ -1,12 +1,11 @@
 import QtQuick
-import QtQuick.Controls
-import Quickshell.Wayland
+import "../../Services"
 
 FocusScope {
     id: root
 
-    required property QtObject config
-    required property QtObject logger
+    required property ConfigStore config
+    required property Logger logger
     required property bool isErrorState
 
     property string statusMessage: ""

@@ -2,12 +2,13 @@ import QtQuick
 import Quickshell
 import Quickshell.Services.Pam
 import Quickshell.Wayland
+import "../../Services"
 
 Scope {
     id: root
 
-    required property QtObject config
-    required property QtObject logger
+    required property ConfigStore config
+    required property Logger logger
 
     signal unlocked()
 
