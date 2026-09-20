@@ -10,6 +10,7 @@ Scope {
     // no chatter, never an enabled one. Failing secure is the whole point.
     property bool debugAllowDismiss: false
     property bool verbose: false
+    property bool loaded: false
 
     readonly property string flagsPath: Quickshell.shellDir + "/Config/build-flags.json"
 
@@ -20,9 +21,12 @@ Scope {
         printErrors: false
     }
 
-    Component.onCompleted: {
-        // d18 pattern: a false return means no load job was queued at all;
-        // with blockLoading the read below is definitive either way.
+    Component.onCompleted: load()
+
+    function load() {
+        if (loaded)
+            return
+        loaded = true
         if (!flagsFile.waitForJob()) {
             console.warn("BuildFlags: no load job was queued for", flagsPath)
         }
@@ -42,8 +46,6 @@ Scope {
                 console.warn("BuildFlags: failed to parse", flagsPath, ":", e)
             }
         }
-        // A build that unlocks without a password must be impossible to run
-        // unknowingly.
         if (root.debugAllowDismiss) {
             console.warn("aerial-lock: DEBUG DISMISS ENABLED — this build unlocks"
                          + " WITHOUT authentication (make dev builds only)")

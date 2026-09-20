@@ -7,6 +7,7 @@ Scope {
     id: root
 
     required property QtObject config
+    required property QtObject logger
 
     signal unlocked()
 
@@ -20,10 +21,8 @@ Scope {
 
     readonly property var i18n: config.i18n || {}
 
-    function log(t) { console.log("[" + Date.now() + "] Lock:", t) }
-
     Component.onCompleted: {
-        log("Component.onCompleted")
+        logger.d("Lock", "Component.onCompleted")
         statusMessage = i18n.prompt || "Enter password"
     }
 
@@ -46,17 +45,18 @@ Scope {
                 unlockInProgress: root.unlockInProgress
                 responseVisible: pam.responseVisible
                 config: root.config
+                logger: root.logger
 
                 onPasswordSubmitted: function (password) {
                     root.tryUnlock(password)
                 }
 
                 onDismissRequested: {
-                    log("onDismissRequested received")
+                    logger.d("Lock", "onDismissRequested received")
                     if (root.config.buildFlags.debugAllowDismiss) {
                         root.attemptCancelled = true
                         pam.abort()
-                        log("dismiss: setting root.locked = false")
+                        logger.d("Lock", "dismiss: setting root.locked = false")
                         root.locked = false
                     }
                 }
@@ -74,7 +74,7 @@ Scope {
         // change-gated responseRequiredChanged fires only once per
         // conversation on quickshell 0.3.1, so it never sees prompt 2+.
         onPamMessage: {
-            log("PAM message: " + message + " (error=" + messageIsError + ")")
+            logger.d("Lock", "PAM message: " + message + " (error=" + messageIsError + ")")
             watchdog.restart()
             if (responseRequired) {
                 // PAM is asking for input.
@@ -110,15 +110,15 @@ Scope {
         onCompleted: function (result) {
             watchdog.stop()
             if (attemptCancelled) {
-                log("PamContext.onCompleted ignored: attempt cancelled")
+                logger.d("Lock", "PamContext.onCompleted ignored: attempt cancelled")
                 return
             }
-            log("PamContext.onCompleted: result=" + result +
+            logger.d("Lock", "PamContext.onCompleted: result=" + result +
                 " (Success=" + PamResult.Success + ")")
             if (result === PamResult.Success) {
                 unlockInProgress = false
                 statusMessage = i18n.unlocked || "Unlocked"
-                log("PAM Success: setting root.locked = false")
+                logger.d("Lock", "PAM Success: setting root.locked = false")
                 root.locked = false
             } else {
                 unlockInProgress = false
@@ -134,7 +134,7 @@ Scope {
         onError: function (error) {
             watchdog.stop()
             if (attemptCancelled) {
-                log("PamContext.onError ignored: attempt cancelled")
+                logger.d("Lock", "PamContext.onError ignored: attempt cancelled")
                 return
             }
             unlockInProgress = false
@@ -154,7 +154,7 @@ Scope {
         repeat: false
         running: false
         onTriggered: {
-            log("PAM watchdog: no PAM traffic for " + interval + "ms — aborting stuck transaction")
+            logger.d("Lock", "PAM watchdog: no PAM traffic for " + interval + "ms — aborting stuck transaction")
             root.attemptCancelled = true
             pam.abort()
             unlockInProgress = false
@@ -171,28 +171,28 @@ Scope {
     Connections {
         target: sessionLock
         function onSecureStateChanged() {
-            log("sessionLock.secure changed: secure=" + sessionLock.secure)
+            logger.d("Lock", "sessionLock.secure changed: secure=" + sessionLock.secure)
         }
         function onLockStateChanged() {
-            log("sessionLock.locked changed: locked=" + sessionLock.locked +
+            logger.d("Lock", "sessionLock.locked changed: locked=" + sessionLock.locked +
                 " secure=" + sessionLock.secure +
                 " ourIntent=" + root.locked +
                 " unlockHandled=" + root.unlockHandled)
 
             if (!sessionLock.locked && !root.unlockHandled) {
                 if (root.locked) {
-                    log("external invalidation detected (root.locked still true)")
-                    console.warn("aerial-lock: lock invalidated externally by compositor")
+                    logger.d("Lock", "external invalidation detected (root.locked still true)")
+                    logger.w("aerial-lock", "lock invalidated externally by compositor")
                 }
                 root.unlockHandled = true
-                log("emitting unlocked()")
+                logger.d("Lock", "emitting unlocked()")
                 root.unlocked()
             }
         }
     }
 
     function tryUnlock(password) {
-        log("tryUnlock: unlockInProgress=" + unlockInProgress +
+        logger.d("Lock", "tryUnlock: unlockInProgress=" + unlockInProgress +
             " pam.responseRequired=" + pam.responseRequired)
         if (unlockInProgress && pendingPassword === "") {
             return
@@ -201,7 +201,7 @@ Scope {
         pendingPassword = password
 
         if (pam.responseRequired) {
-            log("tryUnlock: calling pam.respond")
+            logger.d("Lock", "tryUnlock: calling pam.respond")
             var response = pendingPassword
             pendingPassword = ""
             pam.respond(response)
@@ -209,14 +209,14 @@ Scope {
             statusMessage = i18n.authenticating || "Authenticating..."
             watchdog.restart()
         } else {
-            log("tryUnlock: calling pam.start")
+            logger.d("Lock", "tryUnlock: calling pam.start")
             watchdog.restart()
             attemptCancelled = false
             if (!pam.start()) {
                 watchdog.stop()
                 pendingPassword = ""
                 statusMessage = i18n.authError || "Authentication error"
-                console.warn("aerial-lock: pam.start() failed for service", pam.config)
+                logger.w("aerial-lock", "pam.start() failed for service " + pam.config)
             }
         }
     }

@@ -1,0 +1,5 @@
+singleton Logger 1.0 Logger.qml
+ConfigStore 1.0 ConfigStore.qml
+PamLimits 1.0 PamLimits.qml
+PamProbe 1.0 PamProbe.qml
+BuildFlags 1.0 BuildFlags.qml

@@ -6,6 +6,7 @@ FocusScope {
     id: root
 
     required property QtObject config
+    required property QtObject logger
 
     property string statusMessage: ""
     property bool unlockInProgress: false
@@ -20,10 +21,8 @@ FocusScope {
     signal passwordSubmitted(string password)
     signal dismissRequested()
 
-    function log(t) { console.log("[" + Date.now() + "] LockContent:", t) }
-
     Component.onCompleted: {
-        log("Component.onCompleted")
+        logger.d("LockContent", "Component.onCompleted")
         passwordField.forceActiveFocus()
     }
 
@@ -131,7 +130,7 @@ FocusScope {
                 MouseArea {
                     anchors.fill: parent
                     onClicked: {
-                        log("dismiss button clicked")
+                        logger.d("LockContent", "dismiss button clicked")
                         root.dismissRequested()
                     }
                 }

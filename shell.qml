@@ -6,22 +6,28 @@ import "Services" as Services
 ShellRoot {
     id: root
 
-    function log(t) { console.log("[" + Date.now() + "] shell:", t) }
+    Binding {
+        target: Services.Logger
+        property: "verbose"
+        value: cfg.buildFlags.verbose
+               || Quickshell.env("AERIAL_LOCK_VERBOSE") === "1"
+    }
 
     Services.ConfigStore {
         id: cfg
 
         onReadyChanged: {
-            log("cfg.onReadyChanged: ready=" + ready)
+            Services.Logger.d("shell", "cfg.onReadyChanged: ready=" + ready)
             if (ready) {
                 root.maybeLock()
             }
         }
 
         onFailedChanged: {
-            log("cfg.onFailedChanged: failed=" + failed + " msg=" + errorMessage)
+            Services.Logger.d("shell", "cfg.onFailedChanged: failed=" + failed
+                              + " msg=" + errorMessage)
             if (failed) {
-                console.warn("aerial-lock:", errorMessage)
+                Services.Logger.w("aerial-lock", errorMessage)
                 deferredQuit.start()
             }
         }
@@ -53,9 +59,9 @@ ShellRoot {
     function maybeLock() {
         if (!cfg.ready || !pamProbe.checked) return
         if (!pamProbe.ok) {
-            console.warn("aerial-lock: refusing to lock —", pamProbe.reason)
-            console.warn("aerial-lock: run 'sudo make install', or set "
-                       + "AERIAL_LOCK_PAM_SERVICE=login for development")
+            Services.Logger.w("aerial-lock", "refusing to lock — " + pamProbe.reason)
+            Services.Logger.w("aerial-lock", "run 'sudo make install', or set "
+                              + "AERIAL_LOCK_PAM_SERVICE=login for development")
             deferredQuit.start()
             return
         }
@@ -68,12 +74,14 @@ ShellRoot {
         sourceComponent: Component {
             LockModule.Lock {
                 config: cfg
+                logger: Services.Logger
                 onUnlocked: {
-                    root.log("Lock.onUnlocked received")
+                    Services.Logger.d("shell", "Lock.onUnlocked received")
                     lockLoader.active = false
-                    root.log("lockLoader.active set to false")
+                    Services.Logger.d("shell", "lockLoader.active set to false")
                     fallbackQuit.start()
-                    root.log("fallbackQuit.start called, interval=" + fallbackQuit.interval)
+                    Services.Logger.d("shell", "fallbackQuit.start called, interval="
+                                      + fallbackQuit.interval)
                 }
             }
         }
@@ -84,8 +92,8 @@ ShellRoot {
         interval: cfg.data && cfg.data.fallbackQuitMs ? cfg.data.fallbackQuitMs : 3000
         repeat: false
         onTriggered: {
-            log("fallbackQuit.onTriggered")
-            console.warn("aerial-lock: lastWindowClosed did not fire; forcing exit")
+            Services.Logger.d("shell", "fallbackQuit.onTriggered")
+            Services.Logger.w("aerial-lock", "lastWindowClosed did not fire; forcing exit")
             Qt.quit()
         }
     }
@@ -93,9 +101,9 @@ ShellRoot {
     Connections {
         target: Quickshell
         function onLastWindowClosed() {
-            log("Quickshell.lastWindowClosed received")
+            Services.Logger.d("shell", "Quickshell.lastWindowClosed received")
             fallbackQuit.stop()
-            log("fallbackQuit stopped, calling Qt.quit()")
+            Services.Logger.d("shell", "fallbackQuit stopped, calling Qt.quit()")
             Qt.quit()
         }
     }

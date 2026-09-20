@@ -89,8 +89,8 @@ Scope {
         printErrors: false
 
         onSaveFailed: function (err) {
-            console.warn("ConfigStore: could not write user config.json:",
-                         FileViewError.toString(err))
+            Logger.w("ConfigStore", "could not write user config.json: "
+                     + FileViewError.toString(err))
         }
     }
 
@@ -100,11 +100,12 @@ Scope {
         // reads below are definitive either way: empty means genuinely missing
         // or unreadable, never "not loaded yet".
         if (!defaultsFile.waitForJob()) {
-            console.warn("ConfigStore: no load job was queued for", defaultsPath)
+            Logger.w("ConfigStore", "no load job was queued for " + defaultsPath)
         }
         if (!userFile.waitForJob()) {
-            console.warn("ConfigStore: no load job was queued for", configPath)
+            Logger.w("ConfigStore", "no load job was queued for " + configPath)
         }
+        buildFlagsObj.load()
         initialize()
     }
 
@@ -135,7 +136,7 @@ Scope {
                 merged = deepMerge(defaults, user)
                 sanitise(merged, defaults, root.schema, "")
             } catch (e) {
-                console.warn("ConfigStore: user config.json parse error (" + e + "); using defaults")
+                Logger.w("ConfigStore", "user config.json parse error (" + e + "); using defaults")
                 merged = defaults
             }
         } else {
@@ -154,7 +155,7 @@ Scope {
     function loadI18n(lang) {
         i18nFile.path = i18nDir + "/" + lang + ".json"
         if (!i18nFile.waitForJob()) {
-            console.warn("ConfigStore: no load job was queued for", i18nFile.path)
+            Logger.w("ConfigStore", "no load job was queued for " + i18nFile.path)
         }
         var raw = i18nFile.text()
         if (raw && raw.length > 0) {
@@ -162,7 +163,7 @@ Scope {
                 root.i18n = JSON.parse(raw)
                 return
             } catch (e) {
-                console.warn("ConfigStore: i18n file parse error for " + lang + " (" + e + ")")
+                Logger.w("ConfigStore", "i18n file parse error for " + lang + " (" + e + ")")
             }
         }
 
@@ -171,10 +172,10 @@ Scope {
             return
         }
 
-        console.warn("ConfigStore: i18n file not found for " + lang + "; trying en fallback")
+        Logger.w("ConfigStore", "i18n file not found for " + lang + "; trying en fallback")
         i18nFile.path = i18nDir + "/en.json"
         if (!i18nFile.waitForJob()) {
-            console.warn("ConfigStore: no load job was queued for", i18nFile.path)
+            Logger.w("ConfigStore", "no load job was queued for " + i18nFile.path)
         }
         raw = i18nFile.text()
         if (raw && raw.length > 0) {
@@ -182,7 +183,7 @@ Scope {
                 root.i18n = JSON.parse(raw)
                 return
             } catch (e) {
-                console.warn("ConfigStore: en fallback i18n parse error (" + e + ")")
+                Logger.w("ConfigStore", "en fallback i18n parse error (" + e + ")")
             }
         }
 
@@ -222,8 +223,8 @@ Scope {
                     candidate[key] = defaults[key]
                 }
             } else if (typeof candidate[key] !== spec[key]) {
-                console.warn("ConfigStore: " + fullPath + " has wrong type (expected "
-                             + spec[key] + ", got " + typeof candidate[key] + "); using default")
+                Logger.w("ConfigStore", fullPath + " has wrong type (expected "
+                         + spec[key] + ", got " + typeof candidate[key] + "); using default")
                 candidate[key] = defaults[key]
             }
         }
@@ -235,8 +236,8 @@ Scope {
             if (isPlainObject(spec[key])) {
                 warnSubtree(spec[key], fullPath)
             } else {
-                console.warn("ConfigStore: " + fullPath + " has wrong type (expected "
-                             + spec[key] + "); using default")
+                Logger.w("ConfigStore", fullPath + " has wrong type (expected "
+                         + spec[key] + "); using default")
             }
         }
     }
@@ -248,12 +249,12 @@ Scope {
             var fullPath = path === "" ? key : path + "." + key
             if (isPlainObject(spec[key])) {
                 if (!isPlainObject(data[key]) || !checkBundle(data[key], spec[key], fullPath)) {
-                    console.warn("ConfigStore: bundle defaults invalid at " + fullPath)
+                    Logger.w("ConfigStore", "bundle defaults invalid at " + fullPath)
                     return false
                 }
             } else if (typeof data[key] !== spec[key]) {
-                console.warn("ConfigStore: bundle defaults invalid at " + fullPath
-                             + " (expected " + spec[key] + ", got " + typeof data[key] + ")")
+                Logger.w("ConfigStore", "bundle defaults invalid at " + fullPath
+                         + " (expected " + spec[key] + ", got " + typeof data[key] + ")")
                 return false
             }
         }
@@ -261,7 +262,7 @@ Scope {
     }
 
     function fail(msg) {
-        console.warn("ConfigStore FAILED:", msg)
+        Logger.w("ConfigStore", "FAILED: " + msg)
         errorMessage = msg
         failed = true
     }

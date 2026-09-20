@@ -27,7 +27,7 @@ Scope {
         // read below is definitive either way: empty means genuinely missing
         // or unreadable, never "not loaded yet".
         if (!limitsFile.waitForJob()) {
-            console.warn("PamLimits: no load job was queued for", limitsPath)
+            Logger.w("PamLimits", "no load job was queued for " + limitsPath)
         }
         var raw = limitsFile.text()
         if (raw && raw.length > 0) {
@@ -36,27 +36,27 @@ Scope {
                 if (data && typeof data.maxResponseSize === "number" && data.maxResponseSize > 0) {
                     root.maxResponseSize = data.maxResponseSize
                     root.source = data.source || "pam-limits.json"
-                    log()
+                    report()
                     return
                 }
                 root.source = "pam-limits.json has no positive maxResponseSize"
             } catch (e) {
                 root.source = "pam-limits.json unparseable"
-                console.warn("PamLimits: failed to parse", limitsPath, ":", e)
+                Logger.w("PamLimits", "failed to parse " + limitsPath + ": " + e)
             }
         } else {
             root.source = "pam-limits.json missing"
         }
-        log()
+        report()
     }
 
-    function log() {
+    function report() {
         if (root.maxResponseSize > 0) {
             console.log("aerial-lock: PAM_MAX_RESP_SIZE=" + root.maxResponseSize
                         + " (source: " + root.source + ")")
         } else {
-            console.warn("aerial-lock: PAM response size unknown (" + root.source
-                         + ") — password field uncapped; run make to derive it")
+            Logger.w("aerial-lock", "PAM response size unknown (" + root.source
+                     + ") — password field uncapped; run make to derive it")
         }
     }
 }
