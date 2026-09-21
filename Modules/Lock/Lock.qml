@@ -59,11 +59,47 @@ Scope {
         return screens[0].name
     }
 
+    function tryResolvePanel() {
+        if (root.panelScreenName !== "")
+            return
+        if (compositor.focusedOutputName !== "") {
+            root.panelScreenName = root.resolvePanelScreen()
+            return
+        }
+        if (!compositor.backendReady)
+            return
+        if (compositor.backendName === "none") {
+            root.panelScreenName = root.resolvePanelScreen()
+            return
+        }
+        resolveGrace.restart()
+    }
+
+    Timer {
+        id: resolveGrace
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (root.panelScreenName === "")
+                root.panelScreenName = root.resolvePanelScreen()
+        }
+    }
+
     Component.onCompleted: {
         logger.d("Lock", "Component.onCompleted")
-        root.panelScreenName = root.resolvePanelScreen()
+        root.tryResolvePanel()
         authState = authPrompting
         statusMessage = i18n.prompt || "Enter password"
+    }
+
+    Connections {
+        target: compositor
+        function onBackendReadyChanged() {
+            root.tryResolvePanel()
+        }
+        function onFocusedOutputNameChanged() {
+            root.tryResolvePanel()
+        }
     }
 
     WlSessionLock {

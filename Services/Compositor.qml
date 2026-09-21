@@ -14,6 +14,10 @@ Scope {
         return "none"
     }
 
+    readonly property bool backendReady: backendName === "none"
+            || backendLoader.status === Loader.Ready
+            || backendLoader.status === Loader.Error
+
     readonly property string focusedOutputName: nameFrom(backendLoader.item)
 
     function nameFrom(item) {
