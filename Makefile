@@ -89,6 +89,8 @@ install: all
 	install -m 644 Services/PamProbe.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/BuildFlags.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/Compositor.qml $(DESTDIR)$(DATADIR)/Services/
+	install -d $(DESTDIR)$(DATADIR)/Services/Compositor
+	install -m 644 Services/Compositor/NiriBackend.qml $(DESTDIR)$(DATADIR)/Services/Compositor/
 	install -m 644 Config/defaults.json $(DESTDIR)$(CONFDIR)/
 	install -m 644 Config/pam-limits.json $(DESTDIR)$(CONFDIR)/
 	install -m 644 Config/build-flags.json $(DESTDIR)$(CONFDIR)/
