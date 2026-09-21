@@ -3,3 +3,4 @@ ConfigStore 1.0 ConfigStore.qml
 PamLimits 1.0 PamLimits.qml
 PamProbe 1.0 PamProbe.qml
 BuildFlags 1.0 BuildFlags.qml
+Compositor 1.0 Compositor.qml

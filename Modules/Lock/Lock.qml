@@ -36,10 +36,26 @@ Scope {
 
     property string panelScreenName: ""
 
+    Compositor {
+        id: compositor
+    }
+
     function resolvePanelScreen() {
         var screens = Quickshell.screens
         if (!screens || screens.length === 0)
             return ""
+        if (screens.length === 1)
+            return screens[0].name
+        var focused = compositor.focusedOutputName
+        if (focused && focused.length > 0) {
+            for (var i = 0; i < screens.length; i++) {
+                if (screens[i].name === focused)
+                    return focused
+            }
+            logger.w("aerial-lock", "focused output \"" + focused
+                     + "\" does not match any known screen; using "
+                     + screens[0].name)
+        }
         return screens[0].name
     }
 
