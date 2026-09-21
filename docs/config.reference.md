@@ -121,6 +121,19 @@ make PAM_MAX_RESP_SIZE=1024
 The value is logged on every startup. If it differs from your expectation,
 rebuild the package.
 
+## Compositor
+
+Not user configuration. At lock time, aerial-lock reads the focused output
+from a compositor backend if one is present:
+
+- `NIRI_SOCKET` set → niri (`NiriState.activeOutput`)
+- `HYPRLAND_INSTANCE_SIGNATURE` set → Hyprland (`Hyprland.focusedMonitor.name`)
+- otherwise, or if the backend fails to load, or if the name is not in
+  `Quickshell.screens` → `screens[0]`, with a warning in the last case
+
+There is no config key to pick a screen. A wrong name must not hide the
+panel.
+
 ## Debug / development
 
 Debug behaviour is a **build-time** property, not user configuration: `make`

@@ -94,12 +94,17 @@ Two separate questions: does the compositor implement
 | Compositor       | Protocol  | aerial-lock |
 |------------------|-----------|-------------|
 | Niri             | Yes       | Tested      |
-| Hyprland         | Yes       | Untested    |
+| Hyprland         | Yes       | Tested      |
 | Sway >= 1.9      | Yes       | Untested    |
 | KDE KWin >= 6.0  | Yes       | Untested    |
 | Cosmic           | Yes       | Untested    |
 | river / Wayfire  | Probably  | Untested    |
 | GNOME / Mutter   | No        | —           |
+
+The password panel is placed on the compositor's focused output when that
+name matches a real screen (`NIRI_SOCKET` → niri, `HYPRLAND_INSTANCE_SIGNATURE`
+→ hyprland). If neither env var is set, the backend module fails to load, or
+the name matches no screen, the panel goes on `screens[0]` — never nowhere.
 
 Recovery from a crashed locker is compositor **policy**, not a protocol
 guarantee: `ext-session-lock-v1` says a compositor *may* let a new client
