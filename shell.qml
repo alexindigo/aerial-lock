@@ -104,18 +104,15 @@ ShellRoot {
         repeat: false
         onTriggered: {
             Services.Logger.d("shell", "fallbackQuit.onTriggered")
-            Services.Logger.w("aerial-lock", "lastWindowClosed did not fire; forcing exit")
+            Services.Logger.w("aerial-lock", "deferred exit did not complete; retrying quit")
             Qt.quit()
         }
     }
 
-    Connections {
-        target: Quickshell
-        function onLastWindowClosed() {
-            Services.Logger.d("shell", "Quickshell.lastWindowClosed received")
-            fallbackQuit.stop()
-            Services.Logger.d("shell", "fallbackQuit stopped, calling Qt.quit()")
-            Qt.quit()
-        }
-    }
+    // No lastWindowClosed-based exit. Qt emits lastWindowClosed only from
+    // an accepted QEvent::Close; Quickshell destroys session-lock surfaces
+    // via deleteLater(), never closes them (noctalia-qs
+    // src/wayland/session_lock.cpp:144); and quitOnLastWindowClosed is
+    // disabled at launch (noctalia-qs src/launch/launch.cpp:263). Exit is
+    // therefore explicit and deferred-on-unlock — deferredQuit above.
 }
