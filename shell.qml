@@ -45,10 +45,21 @@ ShellRoot {
         }
     }
 
-    // Deferred quit: Qt.quit() emitted during the startup cascade is a
-    // no-op ("no receivers connected") — the engine wires it only once load
-    // completes. A zero-delay timer fires right after, which still exits
-    // promptly. Verified on quickshell 0.3.1.
+    // Deferred quit, two call sites. Startup: Qt.quit() emitted during the
+    // startup cascade is a no-op ("no receivers connected") — the engine
+    // wires it only once load completes. Unlock (d27): the teardown
+    // contract exits here, on the unlock event.
+    //
+    // interval 0 cannot outrun the Wayland flush of unlock_and_destroy:
+    // qtwayland connects the event dispatcher's aboutToBlock/awake signals
+    // to QWaylandDisplay::flushRequests() → wl_display_flush (qtbase 6.11.2,
+    // src/plugins/platforms/wayland/qwaylandintegration.cpp:217-218), and
+    // both stock dispatchers emit at least one of the two between any event
+    // dispatch and the next (qeventdispatcher_glib.cpp:389,409;
+    // qeventdispatcher_unix.cpp:438,452) — so the marshal is on the wire
+    // before this timer's Qt.quit() runs. Corroborated by the d27
+    // WAYLAND_DEBUG=1 stress loop (20/20 traces: unlock_and_destroy
+    // written before disconnect).
     Timer {
         id: deferredQuit
         interval: 0
@@ -79,9 +90,9 @@ ShellRoot {
                     Services.Logger.d("shell", "Lock.onUnlocked received")
                     lockLoader.active = false
                     Services.Logger.d("shell", "lockLoader.active set to false")
+                    deferredQuit.start()
                     fallbackQuit.start()
-                    Services.Logger.d("shell", "fallbackQuit.start called, interval="
-                                      + fallbackQuit.interval)
+                    Services.Logger.d("shell", "deferredQuit and fallbackQuit started")
                 }
             }
         }
