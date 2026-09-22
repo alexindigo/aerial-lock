@@ -1,6 +1,8 @@
 {
   "language": "en",
   "backgroundColor": "#000000",
+  "video": "",
+  "videoDir": "",
   "pamService": "aerial-lock",
   "fallbackQuitMs": 3000,
   "pamWatchdogTimeoutMs": 60000,

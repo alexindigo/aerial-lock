@@ -36,6 +36,23 @@ Scope {
 
     property string panelScreenName: ""
 
+    // Video background resolution (d32): video wins over videoDir; empty =
+    // solid backgroundColor. LockBackground.qml is the only MpvQml importer
+    // and is only loaded when a source is configured.
+    readonly property string videoPath: {
+        var v = config.data.video
+        if (v && v.length > 0) return v
+        var d = config.data.videoDir
+        if (d && d.length > 0) return d
+        return ""
+    }
+    readonly property bool videoIsDir: {
+        var v = config.data.video
+        if (v && v.length > 0) return false
+        var d = config.data.videoDir
+        return !!(d && d.length > 0)
+    }
+
     Compositor {
         id: compositor
     }
@@ -109,6 +126,49 @@ Scope {
         WlSessionLockSurface {
             id: lockSurface
             color: config.data.backgroundColor
+
+            // Video background (d32) — behind LockContent (first child
+            // paints last-on-bottom). Never eager: active stays false when
+            // no source is configured, so the MpvQml import never runs on
+            // machines without the plugin.
+            Loader {
+                id: bgLoader
+                anchors.fill: parent
+                active: root.videoPath.length > 0
+                source: "LockBackground.qml"
+
+                onLoaded: {
+                    // isDirectory first: LockBackground.applySource() runs
+                    // on property change and needs both set.
+                    item.isDirectory = root.videoIsDir
+                    item.sourcePath = root.videoPath
+                    // qmllint disable missing-property
+                    // Loader.item is typed QObject; the loaded item is
+                    // LockBackground.qml, which defines the loadFailed
+                    // signal — dynamic by design, qmllint cannot see it.
+                    item.loadFailed.connect(function (message) {
+                        root.logger.w("aerial-lock", "video background failed: " + message)
+                    })
+                    // qmllint enable missing-property
+                }
+                onStatusChanged: {
+                    if (status === Loader.Error)
+                        root.logger.w("aerial-lock", "video background unavailable — solid color")
+                }
+            }
+
+            // Stop playback before shell.qml tears the lock tree down on
+            // unlock (mpv render context out of the destruction path).
+            Connections {
+                target: root
+                function onLockedChanged() {
+                    // qmllint disable missing-property
+                    // Same Loader.item dynamism — LockBackground.shutdown().
+                    if (!root.locked && bgLoader.item)
+                        bgLoader.item.shutdown()
+                    // qmllint enable missing-property
+                }
+            }
 
             readonly property bool hostsPanel: {
                 if (!Quickshell.screens || Quickshell.screens.length <= 1)

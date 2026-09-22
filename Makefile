@@ -82,6 +82,7 @@ install: all
 	install -m 644 Modules/Lock/qmldir $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/Lock.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/LockContent.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/LockBackground.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Services/qmldir $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/Logger.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/ConfigStore.qml $(DESTDIR)$(DATADIR)/Services/

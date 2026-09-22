@@ -35,6 +35,8 @@ Scope {
     readonly property var schema: ({
         language: "string",
         backgroundColor: "string",
+        video: "string",
+        videoDir: "string",
         pamService: "string",
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",
