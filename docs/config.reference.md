@@ -25,6 +25,8 @@ fields keep their defaults.
 |--------------------|---------|------------------|------------------------------------------------|
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
+| `video`            | string  | `""`             | Video file behind the panel, looped. Empty = solid `backgroundColor`. Needs the MpvQml plugin. |
+| `videoDir`         | string  | `""`             | Directory of videos as a looping playlist. Ignored when `video` is set. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
 | `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
 
@@ -159,6 +161,8 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
 {
   "language": "en",
   "backgroundColor": "#1a1a2e",
+  "video": "",
+  "videoDir": "",
   "pamService": "login",
   "fallbackQuitMs": 3000,
   "panel": {
@@ -183,5 +187,5 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
 }
 ```
 
-Additional fields will be added in future phases for video sources, overlays,
+Additional fields will be added in future phases for overlays
 and idle behavior.

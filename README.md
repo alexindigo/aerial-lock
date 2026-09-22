@@ -1,8 +1,8 @@
 # aerial-lock
 
-Wayland session-lock client: PAM authentication over a solid background,
-with layered JSON config and i18n. Planned future work is listed under
-[Roadmap](#roadmap).
+Wayland session-lock client: PAM authentication over a solid background or
+an optional looping video, with layered JSON config and i18n. Planned
+future work is listed under [Roadmap](#roadmap).
 
 Targets `ext-session-lock-v1`. Developed and tested on Niri; other
 compositors are untested — see [Compositor support](#compositor-support).
@@ -17,7 +17,10 @@ sudo make install
 ```
 
 Runtime requirement: [Quickshell](https://github.com/outfoxxed/quickshell)
-(any build — not tied to a specific fork).
+(any build — not tied to a specific fork). Optional:
+[qt6-mpvqml](https://github.com/alexindigo/mpvqml) enables the `video` /
+`videoDir` background (local file or directory); without it the locker
+falls back to the solid `backgroundColor`.
 
 ### Build-time PAM_MAX_RESP_SIZE override
 
@@ -178,11 +181,12 @@ strand case.
 
 ## Roadmap
 
-Planned, in rough order: video backgrounds (the Apple Aerial use case —
-fetch, cache, and rotate videos behind the lock panel), compositor
-integrations (idle/suspend/session events), then distribution (AUR
-packaging, systemd unit). The detailed phase list lives in the project's
-planning documents; nothing shipped today depends on unshipped features.
+Planned, in rough order: Apple Aerial fetch, cache, and rotation for the
+video background (playing a local file or directory behind the lock panel
+is implemented), compositor integrations (idle/suspend/session events),
+then distribution (AUR packaging, systemd unit). The detailed phase list
+lives in the project's planning documents; nothing shipped today depends
+on unshipped features.
 
 ## License
 
