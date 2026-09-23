@@ -4,10 +4,13 @@ How to test aerial-lock in nested niri and nested Hyprland sandboxes —
 safe environments that never risk the host session.
 
 **Iron rule: never launch the sandbox on a live desktop session.** All
-testing happens inside the project's test-VM fork
-(`arch-niri-aerial-lock-nested-testing`, forked from `arch-niri`'s
-`niri-gui` snapshot per the vm-fork fleet procedure), driven over SSH with
-`grim`/`wtype`/`ydotool` per the vm-gui-automation skill.
+testing happens inside a project test-VM fork, created per feature with the
+vm-fork fleet procedure: `vm-fork arch-dual-niri aerial-lock <feature>
+dual-niri-base`, then fix the fork's video XML to `virtio-vga-gl` + accel3d +
+SPICE GL, and if the base image's zero-byte file corruption is still
+unrepaired, mass-reinstall packages (`pacman -Qqn | pacman -S --overwrite
+"*" -`). Full recipe in `~/Documents/Aerial/reports/d27-execution.md`. Drive
+over SSH with `grim`/`wtype`/`ydotool` per the vm-gui-automation skill.
 
 ## Prerequisites (inside the test VM)
 
@@ -76,6 +79,20 @@ killed and the compositor releases the lock.
 ### T5: close the nested window
 Close the nested window from the host session. All sandbox state is
 destroyed; the host session is unaffected.
+
+## Nested video / VirGL limit
+
+Video backgrounds (`video` / `videoDir`) must **not** be tested on the
+nested VirGL GPU (`virtio-vga-gl`): mpv/libplacebo's GL path leaks ~1
+`sync_file` fd per frame there and hits the 1024 fd limit in ~35–40 s. The
+frame freezes and keyboard input dies (the seat's keymap fd can't be
+received), so the lock stops responding to password unlock. Non-video
+nested tests are unaffected.
+
+For nested video tests, run the locker with `LIBGL_ALWAYS_SOFTWARE=1`
+(llvmpipe — a test-substrate workaround, not a product requirement), or use
+real hardware. Details: `~/Documents/Aerial/reports/d33-soak-blocked.md` and
+`~/Documents/Aerial/reports/d34-execution.md`.
 
 ## Hyprland multi-output recipe
 
