@@ -98,6 +98,7 @@ install: all
 	install -m 644 Config/build-flags.json $(DESTDIR)$(CONFDIR)/
 	install -m 644 Config/i18n/en.json $(DESTDIR)$(I18NDIR)/
 	install -m 755 aerial-lock $(DESTDIR)$(BINDIR)/aerial-lock
+	install -m 755 Scripts/aerial-lock-fetch $(DESTDIR)$(BINDIR)/aerial-lock-fetch
 	install -m 755 recovery/aerial-unlock $(DESTDIR)$(BINDIR)/aerial-unlock
 	install -m 755 supervisor/aerial-lock-supervisor $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
 	install -d $(DESTDIR)$(PAMDIR)
@@ -106,6 +107,7 @@ install: all
 uninstall:
 	rm -rf $(DESTDIR)$(DATADIR)
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock
+	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-fetch
 	rm -f $(DESTDIR)$(BINDIR)/aerial-unlock
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
 	rm -f $(DESTDIR)$(PAMDIR)/aerial-lock
