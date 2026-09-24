@@ -37,6 +37,9 @@ Scope {
         backgroundColor: "string",
         video: "string",
         videoDir: "string",
+        apple: ({
+            enabled: "boolean"
+        }),
         pamService: "string",
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",

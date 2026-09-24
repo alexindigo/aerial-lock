@@ -3,6 +3,9 @@
   "backgroundColor": "#000000",
   "video": "",
   "videoDir": "",
+  "apple": {
+    "enabled": true
+  },
   "pamService": "aerial-lock",
   "fallbackQuitMs": 3000,
   "pamWatchdogTimeoutMs": 60000,

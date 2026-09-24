@@ -36,21 +36,31 @@ Scope {
 
     property string panelScreenName: ""
 
-    // Video background resolution (d32): video wins over videoDir; empty =
-    // solid backgroundColor. LockBackground.qml is the only MpvQml importer
-    // and is only loaded when a source is configured.
+    // Video background resolution (d32 + d35): a `video` file pin wins
+    // over everything; otherwise the playlist is the union of `videoDir`
+    // and the Apple cache; neither means solid backgroundColor.
+    // LockBackground.qml is the only MpvQml importer and is only loaded
+    // when a source is configured.
     readonly property string videoPath: {
         var v = config.data.video
-        if (v && v.length > 0) return v
-        var d = config.data.videoDir
-        if (d && d.length > 0) return d
-        return ""
+        return (v && v.length > 0) ? v : ""
     }
-    readonly property bool videoIsDir: {
-        var v = config.data.video
-        if (v && v.length > 0) return false
+    readonly property var videoDirs: {
+        if (videoPath.length > 0)
+            return []
+        var dirs = []
         var d = config.data.videoDir
-        return !!(d && d.length > 0)
+        if (d && d.length > 0)
+            dirs.push(d)
+        if (apple.videosDir.length > 0)
+            dirs.push(apple.videosDir)
+        return dirs
+    }
+    readonly property bool hasBackground: videoPath.length > 0 || videoDirs.length > 0
+
+    AppleCache {
+        id: apple
+        config: root.config
     }
 
     Compositor {
@@ -134,14 +144,14 @@ Scope {
             Loader {
                 id: bgLoader
                 anchors.fill: parent
-                active: root.videoPath.length > 0
+                active: root.hasBackground
                 source: "LockBackground.qml"
 
                 onLoaded: {
-                    // isDirectory first: LockBackground.applySource() runs
-                    // on property change and needs both set.
-                    item.isDirectory = root.videoIsDir
+                    // sourcePath first: LockBackground.applySource() runs
+                    // on property change and prefers the file pin when set.
                     item.sourcePath = root.videoPath
+                    item.directories = root.videoDirs
                     // qmllint disable missing-property
                     // Loader.item is typed QObject; the loaded item is
                     // LockBackground.qml, which defines the loadFailed
