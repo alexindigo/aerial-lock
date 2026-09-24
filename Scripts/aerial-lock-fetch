@@ -1,37 +1,56 @@
 #!/bin/sh
-# aerial-lock-fetch — download Apple Aerial clips into the local cache.
+# aerial-lock-fetch — download remote Aerial sources into local caches.
 #
 # The locker never hits the network; this opt-in command is the only
-# network path. Playback unions the local videoDir with this cache.
+# network path. It reads the same config the locker uses
+# ($XDG_CONFIG_HOME/aerial-lock/config.json) and fetches every `apple` /
+# `community` entry of its "sources" list. `folder` / `file` entries are
+# local and ignored.
 #
-# Cache layout ($XDG_CACHE_HOME/aerial-lock/apple, else ~/.cache/aerial-lock/apple):
+# Cache layout ($XDG_CACHE_HOME/aerial-lock/<safe-name>/):
 #   entries.json     manifest sentinel — the locker only checks that it exists
-#   videos/<id>.mp4  one file per asset id; existing clips are skipped
+#   videos/<id>.mp4  one file per asset id
+#   <id>.mp4.done    completion marker — a clip without it is a partial and
+#                    gets resumed (-C -), never treated as cached (d35)
 #
-# Apple serves the manifest and clips from sylvan.apple.com under Apple's own
-# CA chain (CN=Apple Root CA), which is not in Linux system trust stores. The
-# root cert is pinned below; retrieved over public TLS from
-# https://www.apple.com/appleca/AppleIncRootCertificate.cer
-# sha256 B0:B1:73:0E:CB:C7:FF:45:05:14:2C:49:F1:29:5E:6E:DA:6B:CA:ED:7E:2C:68:C5:BE:91:B5:A1:10:01:F0:24
-# valid 2006-04-25 .. 2035-02-09.
+# <safe-name>: the source's name with spaces as '-' and anything outside
+# [A-Za-z0-9._-] stripped (same rule the locker's SourceCache applies).
+#
+# Wire shapes handled (researched live, d35/d36):
+#   - URL ending in .tar            → tarball containing entries.json (Apple)
+#   - URL ending in .json           → a manifest: either a wrapper
+#                                    ("manifestUrl" → follow once) or a bare
+#                                    VideoManifest ("assets")
+#   - anything else                 → pack base URL; fetch <url>/manifest.json
+#                                    (wrapper) and follow its manifestUrl
+#   - the followed body is either a tar or a bare VideoManifest JSON.
+# Community 2020/2026 serve entries.json directly from manifestUrl.
+#
+# sylvan.apple.com serves under Apple's own root (absent from Linux trust
+# stores): on a curl exit 60 (issuer untrusted) the request is retried once
+# with the pinned Apple Root CA below — a fallback, not a blanket pin, so
+# github.io / custom hosts keep normal system trust.
+#   Pinned cert: https://www.apple.com/appleca/AppleIncRootCertificate.cer
+#   sha256 B0:B1:73:0E:CB:C7:FF:45:05:14:2C:49:F1:29:5E:6E:DA:6B:CA:ED:7E:2C:68:C5:BE:91:B5:A1:10:01:F0:24
+#   valid 2006-04-25 .. 2035-02-09.
 
 set -eu
-
-MANIFEST_URL="https://sylvan.apple.com/Aerials/resources-16.tar"
 
 usage() {
     cat >&2 <<'EOF'
 usage: aerial-lock-fetch [--limit N] [--quality 1080]
 
-Downloads the Apple Aerial manifest and 1080p H.264 clips into the cache.
-  --limit N     fetch only the first N assets (for tests / a first run).
-                Default: no limit.
-  --quality     only 1080 is supported in v1 (1080p H.264).
+Fetches the apple/community sources from the aerial-lock config into the
+local cache. 1080p H.264 preferred (url-1080-H264, then url-1080-SDR,
+url-1080-HDR); packs without a 1080 field are warned about and skipped.
+  --limit N     fetch only the first N assets per source (tests / first
+                run). Default: no limit.
+  --quality     only 1080 is supported in v1.
   -h, --help    this text.
 
-Exit: 0 if at least one clip is in the cache when done (already cached
-counts); 1 if the manifest could not be fetched or no clips exist; 2 on
-bad arguments.
+Exit: 0 if at least one clip exists in a fetched cache when done (already
+cached counts); 1 if the config has no remote sources or none produced a
+clip; 2 on bad arguments.
 EOF
 }
 
@@ -65,19 +84,15 @@ done
 
 [ "$QUALITY" = "1080" ] || { echo "aerial-lock-fetch: only --quality 1080 is supported in v1" >&2; exit 2; }
 
-if [ -n "${XDG_CACHE_HOME:-}" ]; then
-    CACHE="$XDG_CACHE_HOME/aerial-lock/apple"
-else
-    CACHE="$HOME/.cache/aerial-lock/apple"
-fi
-VIDEOS="$CACHE/videos"
-mkdir -p "$VIDEOS"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/aerial-lock/config.json"
+CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/aerial-lock"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # Pinned Apple Root CA (see header).
-cat > "$TMP/apple-root.pem" <<'EOF'
+PEM="$TMP/apple-root.pem"
+cat > "$PEM" <<'EOF'
 -----BEGIN CERTIFICATE-----
 MIIEuzCCA6OgAwIBAgIBAjANBgkqhkiG9w0BAQUFADBiMQswCQYDVQQGEwJVUzET
 MBEGA1UEChMKQXBwbGUgSW5jLjEmMCQGA1UECxMdQXBwbGUgQ2VydGlmaWNhdGlv
@@ -108,27 +123,151 @@ UKqK1drk/NAJBzewdXUh
 -----END CERTIFICATE-----
 EOF
 
-# Manifest: fetch tar, extract entries.json, validate, atomically replace.
-if ! curl --fail -sS --cacert "$TMP/apple-root.pem" \
-        -o "$TMP/resources.tar" "$MANIFEST_URL"; then
-    echo "aerial-lock-fetch: manifest fetch failed: $MANIFEST_URL" >&2
-    exit 1
-fi
-if ! tar -xOf "$TMP/resources.tar" entries.json > "$TMP/entries.json" \
-        || [ ! -s "$TMP/entries.json" ]; then
-    echo "aerial-lock-fetch: manifest tar has no entries.json" >&2
-    exit 1
-fi
-if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$TMP/entries.json"; then
-    echo "aerial-lock-fetch: entries.json is not valid JSON" >&2
-    exit 1
-fi
-mv -f "$TMP/entries.json" "$CACHE/entries.json.tmp"
-mv -f "$CACHE/entries.json.tmp" "$CACHE/entries.json"
+# fetch_url <url> <dest> [extra curl args...] — on curl exit 60 (issuer not
+# trusted) retry once with the pinned Apple Root CA.
+fetch_url() {
+    _fu_url="$1"; _fu_dest="$2"; shift 2
+    _fu_rc=0
+    curl --fail -sS "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
+    if [ "$_fu_rc" -eq 60 ]; then
+        echo "aerial-lock-fetch: system trust failed for $_fu_url — retrying with pinned Apple Root CA" >&2
+        _fu_rc=0
+        curl --fail -sS --cacert "$PEM" "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
+    fi
+    return "$_fu_rc"
+}
 
-# Asset list: "id<TAB>url-1080-H264" per line. All 114 assets carry the
-# 1080p H.264 field (verified against resources-16.tar, 2026-09).
-python3 - "$CACHE/entries.json" "$LIMIT" > "$TMP/wanted.tsv" <<'EOF'
+# Validated remote sources from the user config: "safe-name<TAB>type<TAB>url".
+# Same per-field tolerance as the locker (bad entry → WARN naming the index,
+# rest kept); name sanitize/dedupe rule matches SourceCache.qml.
+if [ ! -f "$CONFIG" ]; then
+    echo "aerial-lock-fetch: no config at $CONFIG — no remote sources" >&2
+    exit 1
+fi
+python3 - "$CONFIG" > "$TMP/sources.tsv" <<'PYEOF'
+import json, re, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception as e:
+    sys.stderr.write(f"aerial-lock-fetch: cannot parse {sys.argv[1]}: {e}\n")
+    sys.exit(3)
+sources = data.get("sources", [])
+if not isinstance(sources, list):
+    sys.stderr.write("aerial-lock-fetch: config 'sources' is not a list\n")
+    sys.exit(3)
+seen = set()
+for i, s in enumerate(sources):
+    if not isinstance(s, dict) or not all(isinstance(s.get(k), str) and s.get(k) for k in ("type", "name", "source")):
+        sys.stderr.write(f"aerial-lock-fetch: sources[{i}] needs type/name/source strings — skipped\n")
+        continue
+    if s["type"] not in ("apple", "community", "folder", "file"):
+        sys.stderr.write(f"aerial-lock-fetch: sources[{i}].type {s['type']!r} unknown — skipped\n")
+        continue
+    if s["type"] in ("folder", "file"):
+        continue
+    safe = re.sub(r"[^A-Za-z0-9._-]", "", s["name"].replace(" ", "-"))
+    if not safe:
+        sys.stderr.write(f"aerial-lock-fetch: sources[{i}].name sanitizes to nothing — skipped\n")
+        continue
+    if safe in seen:
+        sys.stderr.write(f"aerial-lock-fetch: duplicate source name {safe!r} — skipping later entry\n")
+        continue
+    seen.add(safe)
+    print(safe + "\t" + s["type"] + "\t" + s["source"])
+PYEOF
+
+if [ ! -s "$TMP/sources.tsv" ]; then
+    echo "aerial-lock-fetch: no remote sources in config" >&2
+    exit 1
+fi
+
+# classify <file> → prints "entries" (bare VideoManifest), "wrapper <url>",
+# or "unknown".
+classify() {
+    python3 - "$1" <<'PYEOF'
+import json, sys
+raw = open(sys.argv[1], "rb").read()
+if raw[257:262] == b"ustar":
+    print("tar"); sys.exit(0)
+try:
+    d = json.loads(raw)
+except Exception:
+    print("unknown"); sys.exit(0)
+if isinstance(d, dict) and isinstance(d.get("assets"), list):
+    print("entries")
+elif isinstance(d, dict) and isinstance(d.get("manifestUrl"), str) and d["manifestUrl"]:
+    print("wrapper " + d["manifestUrl"])
+else:
+    print("unknown")
+PYEOF
+}
+
+# install_entries <src-file> <cache-dir> — validate + atomic replace.
+install_entries() {
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert isinstance(d.get("assets"), list)' "$1" 2>/dev/null || {
+        echo "aerial-lock-fetch: entries.json is not a valid manifest" >&2
+        return 1
+    }
+    mkdir -p "$2"
+    cp "$1" "$2/entries.json.tmp"
+    mv -f "$2/entries.json.tmp" "$2/entries.json"
+}
+
+# fetch_one <safe-name> <url> — resolve the manifest body (tar / wrapper /
+# bare JSON), install the sentinel, download the 1080p clips. Returns 0 if
+# the cache holds at least one clip when done.
+fetch_one() {
+    _fo_name="$1"; _fo_url="$2"
+    _fo_cache="$CACHE_BASE/$_fo_name"
+    _fo_body="$TMP/$_fo_name.body"
+
+    case "$_fo_url" in
+        *.tar|*.json) _fo_first="$_fo_url" ;;
+        *)            _fo_first="${_fo_url%/}/manifest.json" ;;
+    esac
+
+    if ! fetch_url "$_fo_first" "$_fo_body"; then
+        echo "aerial-lock-fetch: $_fo_name: fetch failed: $_fo_first" >&2
+        return 1
+    fi
+
+    _fo_kind="$(classify "$_fo_body")"
+    case "$_fo_kind" in
+        wrapper\ *)
+            _fo_next="${_fo_kind#wrapper }"
+            if ! fetch_url "$_fo_next" "$_fo_body.2"; then
+                echo "aerial-lock-fetch: $_fo_name: fetch failed: $_fo_next" >&2
+                return 1
+            fi
+            _fo_body="$_fo_body.2"
+            _fo_kind="$(classify "$_fo_body")"
+            ;;
+    esac
+
+    case "$_fo_kind" in
+        tar)
+            if ! tar -xOf "$_fo_body" entries.json > "$TMP/$_fo_name.entries" 2>/dev/null \
+                    || [ ! -s "$TMP/$_fo_name.entries" ]; then
+                echo "aerial-lock-fetch: $_fo_name: tar has no entries.json" >&2
+                return 1
+            fi
+            ;;
+        entries)
+            cp "$_fo_body" "$TMP/$_fo_name.entries"
+            ;;
+        *)
+            echo "aerial-lock-fetch: $_fo_name: unrecognized manifest shape" >&2
+            return 1
+            ;;
+    esac
+
+    if ! install_entries "$TMP/$_fo_name.entries" "$_fo_cache"; then
+        echo "aerial-lock-fetch: $_fo_name: invalid entries.json — skipped" >&2
+        return 1
+    fi
+
+    # 1080p preference: H.264, then SDR, then HDR. No 1080 field → skip pack.
+    python3 - "$TMP/$_fo_name.entries" "$LIMIT" > "$TMP/$_fo_name.tsv" <<'PYEOF'
 import json, sys
 data = json.load(open(sys.argv[1]))
 limit = int(sys.argv[2])
@@ -136,41 +275,50 @@ assets = data.get("assets", [])
 if limit > 0:
     assets = assets[:limit]
 for a in assets:
-    aid, url = a.get("id"), a.get("url-1080-H264")
+    aid = a.get("id")
+    url = a.get("url-1080-H264") or a.get("url-1080-SDR") or a.get("url-1080-HDR")
     if aid and url:
         print(aid + "\t" + url)
-EOF
+PYEOF
 
-# Clips: skip what's cached, resume partials (-C -), warn and continue on
-# individual failures. A truncated clip is not "cached": a .mov cut short
-# loses its moov atom and won't play. Completion is tracked by a
-# <id>.mp4.done marker written only after curl exits 0; a clip without the
-# marker is (re)fetched, and -C - resumes it. (If the marker is lost but
-# the clip is complete, curl -C - is a cheap no-op and the marker is
-# re-touched.)
-TAB="$(printf '\t')"
-while IFS="$TAB" read -r id url; do
-    [ -n "$id" ] || continue
-    out="$VIDEOS/$id.mp4"
-    if [ -s "$out" ] && [ -f "$out.done" ]; then
-        echo "aerial-lock-fetch: have $id — skipped"
-        continue
+    if [ ! -s "$TMP/$_fo_name.tsv" ]; then
+        echo "aerial-lock-fetch: $_fo_name: no 1080p URLs in manifest — pack skipped" >&2
+        return 1
     fi
-    echo "aerial-lock-fetch: fetching $id"
-    if curl --fail -sS --cacert "$TMP/apple-root.pem" \
-            -C - -o "$out" "$url"; then
-        touch "$out.done"
-    else
-        rm -f "$out.done"
-        echo "aerial-lock-fetch: clip $id failed — continuing" >&2
-    fi
-done < "$TMP/wanted.tsv"
 
-# Success = at least one clip in the cache when done (cached counts).
-set -- "$VIDEOS"/*.mp4
-if [ -e "$1" ]; then
-    echo "aerial-lock-fetch: $# clip(s) in $VIDEOS"
+    mkdir -p "$_fo_cache/videos"
+    TAB="$(printf '\t')"
+    while IFS="$TAB" read -r id url; do
+        [ -n "$id" ] || continue
+        out="$_fo_cache/videos/$id.mp4"
+        if [ -s "$out" ] && [ -f "$out.done" ]; then
+            echo "aerial-lock-fetch: $_fo_name: have $id — skipped"
+            continue
+        fi
+        echo "aerial-lock-fetch: $_fo_name: fetching $id"
+        if fetch_url "$url" "$out" -C -; then
+            touch "$out.done"
+        else
+            rm -f "$out.done"
+            echo "aerial-lock-fetch: $_fo_name: clip $id failed — continuing" >&2
+        fi
+    done < "$TMP/$_fo_name.tsv"
+
+    set -- "$_fo_cache/videos"/*.mp4
+    [ -e "$1" ]
+}
+
+ANY=1
+while IFS="$(printf '\t')" read -r name _type url; do
+    [ -n "$name" ] || continue
+    if fetch_one "$name" "$url"; then
+        ANY=0
+    fi
+done < "$TMP/sources.tsv"
+
+if [ "$ANY" -eq 0 ]; then
+    echo "aerial-lock-fetch: done — clips cached under $CACHE_BASE"
     exit 0
 fi
-echo "aerial-lock-fetch: no clips in $VIDEOS" >&2
+echo "aerial-lock-fetch: no clips in any fetched cache" >&2
 exit 1
