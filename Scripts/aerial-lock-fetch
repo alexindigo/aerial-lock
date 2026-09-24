@@ -16,6 +16,13 @@
 # <safe-name>: the source's name with spaces as '-' and anything outside
 # [A-Za-z0-9._-] stripped (same rule the locker's SourceCache applies).
 #
+# Clip height per asset: the source's resolution band (optional
+# minResolution/maxResolution in config — 1080 or 2160, hard limits), then
+# the global preferredResolution (same height in-band, else next up, never
+# past max; d37). If the key is absent from the user config and a niri/
+# Hyprland probe can see outputs, it is written there once (largest
+# logical output height); a present key is never overwritten.
+#
 # Wire shapes handled (researched live, d35/d36):
 #   - URL ending in .tar            → tarball containing entries.json (Apple)
 #   - URL ending in .json           → a manifest: either a wrapper
@@ -38,14 +45,16 @@ set -eu
 
 usage() {
     cat >&2 <<'EOF'
-usage: aerial-lock-fetch [--limit N] [--quality 1080]
+usage: aerial-lock-fetch [--limit N]
 
 Fetches the apple/community sources from the aerial-lock config into the
-local cache. 1080p H.264 preferred (url-1080-H264, then url-1080-SDR,
-url-1080-HDR); packs without a 1080 field are warned about and skipped.
+local cache. Clip height is chosen per asset: the source's resolution
+band ([minResolution, maxResolution]; 1080 or 2160, hard limits) first,
+then the global preferredResolution (same height if in-band, else the
+next height up, never past max). A pack with nothing in-band is warned
+about and skipped.
   --limit N     fetch only the first N assets per source (tests / first
                 run). Default: no limit.
-  --quality     only 1080 is supported in v1.
   -h, --help    this text.
 
 Exit: 0 if at least one clip exists in a fetched cache when done (already
@@ -55,7 +64,6 @@ EOF
 }
 
 LIMIT=0
-QUALITY=1080
 while [ $# -gt 0 ]; do
     case "$1" in
         --limit)
@@ -64,11 +72,6 @@ while [ $# -gt 0 ]; do
             case "$LIMIT" in
                 ''|*[!0-9]*) echo "aerial-lock-fetch: --limit needs a number" >&2; usage; exit 2 ;;
             esac
-            shift 2
-            ;;
-        --quality)
-            [ $# -ge 2 ] || { usage; exit 2; }
-            QUALITY="$2"
             shift 2
             ;;
         -h|--help)
@@ -81,8 +84,6 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
-
-[ "$QUALITY" = "1080" ] || { echo "aerial-lock-fetch: only --quality 1080 is supported in v1" >&2; exit 2; }
 
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/aerial-lock/config.json"
 CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/aerial-lock"
@@ -124,37 +125,96 @@ UKqK1drk/NAJBzewdXUh
 EOF
 
 # fetch_url <url> <dest> [extra curl args...] — on curl exit 60 (issuer not
-# trusted) retry once with the pinned Apple Root CA.
+# trusted) retry once with the pinned Apple Root CA. -L: community clip
+# URLs are github release assets, which 302 to a CDN (d37).
 fetch_url() {
     _fu_url="$1"; _fu_dest="$2"; shift 2
     _fu_rc=0
-    curl --fail -sS "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
+    curl --fail -sS --location "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
     if [ "$_fu_rc" -eq 60 ]; then
         echo "aerial-lock-fetch: system trust failed for $_fu_url — retrying with pinned Apple Root CA" >&2
         _fu_rc=0
-        curl --fail -sS --cacert "$PEM" "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
+        curl --fail -sS --location --cacert "$PEM" "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
     fi
     return "$_fu_rc"
 }
 
-# Validated remote sources from the user config: "safe-name<TAB>type<TAB>url".
+# Validated remote sources from the user config:
+# "safe-name<TAB>type<TAB>url<TAB>min<TAB>max" (min/max empty = unbounded).
 # Same per-field tolerance as the locker (bad entry → WARN naming the index,
 # rest kept); name sanitize/dedupe rule matches SourceCache.qml.
+#
+# preferredResolution handling (d37): if the key is absent from the user
+# file and a compositor probe can see outputs, the largest connected
+# output's logical height decides (>= 2160 → 2160, else 1080) and the key
+# is written into the user file (atomic rewrite, other keys untouched). A
+# key already in the file — valid or not — is never touched. No key and no
+# probe → this run picks the highest in-band URL without writing anything.
 if [ ! -f "$CONFIG" ]; then
     echo "aerial-lock-fetch: no config at $CONFIG — no remote sources" >&2
     exit 1
 fi
-python3 - "$CONFIG" > "$TMP/sources.tsv" <<'PYEOF'
-import json, re, sys
+python3 - "$CONFIG" "$TMP/sources.tsv" "$TMP/preferred" <<'PYEOF'
+import json, os, re, subprocess, sys
+
+config_path, sources_out, preferred_out = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    data = json.load(open(sys.argv[1]))
+    data = json.load(open(config_path))
 except Exception as e:
-    sys.stderr.write(f"aerial-lock-fetch: cannot parse {sys.argv[1]}: {e}\n")
+    sys.stderr.write(f"aerial-lock-fetch: cannot parse {config_path}: {e}\n")
     sys.exit(3)
+
+def probe_logical_height():
+    """Largest connected output's logical height, or None if nobody can see
+    outputs. Same env detection as the locker's Compositor.qml."""
+    if os.environ.get("NIRI_SOCKET"):
+        try:
+            out = subprocess.run(["niri", "msg", "-j", "outputs"],
+                                 capture_output=True, timeout=5)
+            hs = [o["logical"]["height"] for o in json.loads(out.stdout).values()
+                  if isinstance(o.get("logical"), dict)
+                  and isinstance(o["logical"].get("height"), (int, float))]
+            return max(hs) if hs else None
+        except Exception:
+            return None
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        try:
+            out = subprocess.run(["hyprctl", "monitors", "-j"],
+                                 capture_output=True, timeout=5)
+            hs = [round(m["height"] / m["scale"]) for m in json.loads(out.stdout)
+                  if isinstance(m.get("height"), (int, float))
+                  and isinstance(m.get("scale"), (int, float)) and m["scale"]]
+            return max(hs) if hs else None
+        except Exception:
+            return None
+    return None
+
+# Existence-write: only when the key is ABSENT. A present key is never
+# touched — even one sanitise would reject (e.g. 1440); it is the user's.
+if "preferredResolution" not in data:
+    h = probe_logical_height()
+    if h:
+        data["preferredResolution"] = 2160 if h >= 2160 else 1080
+        tmp = config_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, config_path)
+        sys.stderr.write(f"aerial-lock-fetch: wrote preferredResolution {data['preferredResolution']} "
+                         f"(largest output {h}p) into {config_path}\n")
+
+preferred = data.get("preferredResolution")
+if preferred is not None:
+    if isinstance(preferred, int) and preferred in (1080, 2160):
+        open(preferred_out, "w").write(str(preferred))
+    else:
+        sys.stderr.write(f"aerial-lock-fetch: preferredResolution {preferred!r} is not 1080 or 2160 — ignoring it\n")
+
 sources = data.get("sources", [])
 if not isinstance(sources, list):
     sys.stderr.write("aerial-lock-fetch: config 'sources' is not a list\n")
     sys.exit(3)
+lines = []
 seen = set()
 for i, s in enumerate(sources):
     if not isinstance(s, dict) or not all(isinstance(s.get(k), str) and s.get(k) for k in ("type", "name", "source")):
@@ -165,6 +225,21 @@ for i, s in enumerate(sources):
         continue
     if s["type"] in ("folder", "file"):
         continue
+    band = []
+    bad = False
+    for k in ("minResolution", "maxResolution"):
+        v = s.get(k)
+        if v is None:
+            # "-" for unbounded: tab is IFS-whitespace to the shell's read,
+            # so an empty field would collapse and shift the columns.
+            band.append("-")
+        elif isinstance(v, int) and v in (1080, 2160):
+            band.append(str(v))
+        else:
+            sys.stderr.write(f"aerial-lock-fetch: sources[{i}].{k} {v!r} is not 1080 or 2160 — source skipped\n")
+            bad = True
+    if bad:
+        continue
     safe = re.sub(r"[^A-Za-z0-9._-]", "", s["name"].replace(" ", "-"))
     if not safe:
         sys.stderr.write(f"aerial-lock-fetch: sources[{i}].name sanitizes to nothing — skipped\n")
@@ -173,7 +248,9 @@ for i, s in enumerate(sources):
         sys.stderr.write(f"aerial-lock-fetch: duplicate source name {safe!r} — skipping later entry\n")
         continue
     seen.add(safe)
-    print(safe + "\t" + s["type"] + "\t" + s["source"])
+    lines.append("\t".join((safe, s["type"], s["source"], band[0], band[1])))
+with open(sources_out, "w") as f:
+    f.write("\n".join(lines) + ("\n" if lines else ""))
 PYEOF
 
 if [ ! -s "$TMP/sources.tsv" ]; then
@@ -213,11 +290,14 @@ install_entries() {
     mv -f "$2/entries.json.tmp" "$2/entries.json"
 }
 
-# fetch_one <safe-name> <url> — resolve the manifest body (tar / wrapper /
-# bare JSON), install the sentinel, download the 1080p clips. Returns 0 if
-# the cache holds at least one clip when done.
+# fetch_one <safe-name> <url> <min> <max> — resolve the manifest body
+# (tar / wrapper / bare JSON), install the sentinel, download clips picked
+# from the resolution band + preferredResolution. Returns 0 if the cache
+# holds at least one clip when done.
 fetch_one() {
-    _fo_name="$1"; _fo_url="$2"
+    _fo_name="$1"; _fo_url="$2"; _fo_min="$3"; _fo_max="$4"
+    [ "$_fo_min" = "-" ] && _fo_min=""
+    [ "$_fo_max" = "-" ] && _fo_max=""
     _fo_cache="$CACHE_BASE/$_fo_name"
     _fo_body="$TMP/$_fo_name.body"
 
@@ -266,23 +346,53 @@ fetch_one() {
         return 1
     fi
 
-    # 1080p preference: H.264, then SDR, then HDR. No 1080 field → skip pack.
-    python3 - "$TMP/$_fo_name.entries" "$LIMIT" > "$TMP/$_fo_name.tsv" <<'PYEOF'
+    # Per asset: in-band heights first, then same-as-preferred, else next
+    # up, else highest in-band — never above max. Nothing in-band → the
+    # asset is skipped; zero in-band assets → the pack is skipped.
+    python3 - "$TMP/$_fo_name.entries" "$LIMIT" "$_fo_min" "$_fo_max" "$PREFERRED" > "$TMP/$_fo_name.tsv" <<'PYEOF'
 import json, sys
+
 data = json.load(open(sys.argv[1]))
 limit = int(sys.argv[2])
+lo = int(sys.argv[3]) if sys.argv[3] else 0
+hi = int(sys.argv[4]) if sys.argv[4] else 10**9
+preferred = int(sys.argv[5]) if sys.argv[5] else None
+
+# Same-height key order: H.264 first at 1080 (cheapest decode), SDR first
+# at 2160 (the only SDR/HDR pair community packs ship).
+KEYS = {1080: ["url-1080-H264", "url-1080-SDR", "url-1080-HDR"],
+        2160: ["url-4K-SDR", "url-4K-HDR"]}
+
+def pick(asset):
+    cands = {}
+    for h, keys in KEYS.items():
+        if lo <= h <= hi:
+            for k in keys:
+                if asset.get(k):
+                    cands[h] = asset[k]
+                    break
+    if not cands:
+        return None
+    if preferred in cands:
+        return cands[preferred]
+    if preferred is not None:
+        higher = [h for h in cands if h > preferred]
+        if higher:
+            return cands[min(higher)]
+    return cands[max(cands)]
+
 assets = data.get("assets", [])
 if limit > 0:
     assets = assets[:limit]
 for a in assets:
     aid = a.get("id")
-    url = a.get("url-1080-H264") or a.get("url-1080-SDR") or a.get("url-1080-HDR")
+    url = pick(a)
     if aid and url:
         print(aid + "\t" + url)
 PYEOF
 
     if [ ! -s "$TMP/$_fo_name.tsv" ]; then
-        echo "aerial-lock-fetch: $_fo_name: no 1080p URLs in manifest — pack skipped" >&2
+        echo "aerial-lock-fetch: $_fo_name: no in-band URLs in manifest — pack skipped" >&2
         return 1
     fi
 
@@ -308,10 +418,13 @@ PYEOF
     [ -e "$1" ]
 }
 
+PREFERRED=""
+[ -s "$TMP/preferred" ] && PREFERRED="$(cat "$TMP/preferred")"
+
 ANY=1
-while IFS="$(printf '\t')" read -r name _type url; do
+while IFS="$(printf '\t')" read -r name _type url min max; do
     [ -n "$name" ] || continue
-    if fetch_one "$name" "$url"; then
+    if fetch_one "$name" "$url" "$min" "$max"; then
         ANY=0
     fi
 done < "$TMP/sources.tsv"

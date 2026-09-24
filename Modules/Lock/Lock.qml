@@ -101,8 +101,29 @@ Scope {
     Component.onCompleted: {
         logger.d("Lock", "Component.onCompleted")
         root.tryResolvePanel()
+        root.stampPreferred()
         authState = authPrompting
         statusMessage = i18n.prompt || "Enter password"
+    }
+
+    // d37: stamp preferredResolution on lock start when outputs are
+    // visible (ShellScreen.height is the logical height). The write is
+    // existence-only — maybeWritePreferred re-reads the user file and
+    // no-ops if the key is already there, valid or not. With no screens
+    // (shouldn't happen under Wayland) there is no write.
+    function stampPreferred() {
+        if (config.data.preferredResolution !== undefined)
+            return
+        var screens = Quickshell.screens
+        if (!screens || screens.length === 0)
+            return
+        var maxH = 0
+        for (var i = 0; i < screens.length; i++) {
+            if (screens[i].height > maxH)
+                maxH = screens[i].height
+        }
+        if (maxH > 0)
+            config.maybeWritePreferred(maxH >= 2160 ? 2160 : 1080)
     }
 
     Connections {

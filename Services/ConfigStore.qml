@@ -140,6 +140,7 @@ Scope {
                 merged = deepMerge(defaults, user)
                 sanitise(merged, defaults, root.schema, "")
                 merged.sources = cleanSources(merged.sources)
+                validatePreferred(merged)
             } catch (e) {
                 Logger.w("ConfigStore", "user config.json parse error (" + e + "); using defaults")
                 merged = defaults
@@ -208,7 +209,9 @@ Scope {
 
     // Per-entry tolerance (d17 spirit): a bad entry is dropped with a
     // warning naming its index; the rest of the list is kept. Each
-    // surviving entry gains a `safeName` for cache-dir use.
+    // surviving entry gains a `safeName` for cache-dir use. A source with
+    // an invalid resolution band (min/max not 1080/2160) is dropped
+    // entirely — fetch skips it the same way.
     function cleanSources(list) {
         var out = []
         var seen = ({})
@@ -224,6 +227,17 @@ Scope {
                 Logger.w("ConfigStore", "sources[" + i + "].type \"" + s.type + "\" unknown; entry dropped")
                 continue
             }
+            var bandBad = false
+            for (var b = 0; b < 2; b++) {
+                var key = b === 0 ? "minResolution" : "maxResolution"
+                var v = s[key]
+                if (v !== undefined && (typeof v !== "number" || (v !== 1080 && v !== 2160))) {
+                    Logger.w("ConfigStore", "sources[" + i + "]." + key + " must be 1080 or 2160; entry dropped")
+                    bandBad = true
+                }
+            }
+            if (bandBad)
+                continue
             var safe = sanitizeSourceName(s.name)
             if (safe.length === 0) {
                 Logger.w("ConfigStore", "sources[" + i + "].name sanitizes to nothing; entry dropped")
@@ -234,9 +248,52 @@ Scope {
                 continue
             }
             seen[safe] = true
-            out.push({ type: s.type, name: s.name, safeName: safe, source: s.source })
+            var entry = { type: s.type, name: s.name, safeName: safe, source: s.source }
+            if (s.minResolution !== undefined) entry.minResolution = s.minResolution
+            if (s.maxResolution !== undefined) entry.maxResolution = s.maxResolution
+            out.push(entry)
         }
         return out
+    }
+
+    // d37 existence-write: stamp preferredResolution (1080 or 2160) into
+    // the user config — but ONLY if the key is absent from the file on
+    // disk. A key already there is never touched, even one sanitise
+    // dropped from `data` (e.g. 1440): "key present in the user file"
+    // is what counts, not the sanitised value.
+    function maybeWritePreferred(n) {
+        if (n !== 1080 && n !== 2160)
+            return false
+        var raw = userFile.text()
+        var user = ({})
+        if (raw && raw.length > 0) {
+            try { user = JSON.parse(raw) } catch (e) {
+                Logger.w("ConfigStore", "maybeWritePreferred: user config unparseable; not writing")
+                return false
+            }
+        }
+        if ("preferredResolution" in user)
+            return false
+        user.preferredResolution = n
+        Logger.w("ConfigStore", "stamped preferredResolution " + n + " into " + configPath)
+        userFile.setText(JSON.stringify(user, null, 2) + "\n")
+        return true
+    }
+
+    // d37: preferredResolution is optional and NOT in the bundle defaults —
+    // absence is the signal fetch/Lock use for the existence-write. A
+    // present-but-invalid value is dropped from data with a warning; the
+    // user file on disk stays untouched (that's maybeWritePreferred's cue
+    // that a key exists at all).
+    function validatePreferred(data) {
+        if (!("preferredResolution" in data))
+            return
+        var v = data.preferredResolution
+        if (typeof v !== "number" || (v !== 1080 && v !== 2160)) {
+            Logger.w("ConfigStore", "preferredResolution must be 1080 or 2160 (got "
+                     + JSON.stringify(v) + "); ignoring — file unchanged")
+            delete data.preferredResolution
+        }
     }
 
     // d36 one-shot migration: a user config with the d32/d35 keys and no
