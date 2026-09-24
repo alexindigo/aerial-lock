@@ -106,10 +106,13 @@ aerial-lock-fetch               # everything in sources[]
 ```
 
 Clips cache under `~/.cache/aerial-lock/<name>/`; a pack plays only once
-fetched, and an unfetched pack is skipped silently. See
-[`docs/config.reference.md`](docs/config.reference.md) for the full
-`sources` reference, migration from the old `video`/`videoDir`/`apple`
-keys, and the known 4K-only state of today's community packs.
+fetched, and an unfetched pack is skipped silently. Clip resolution follows
+a per-source `minResolution`/`maxResolution` band plus a global
+`preferredResolution`, which is stamped into your config from your largest
+display the first time outputs are visible (and never overwritten after
+that). See [`docs/config.reference.md`](docs/config.reference.md) for the
+full `sources` reference, the resolution rules, and migration from the old
+`video`/`videoDir`/`apple` keys.
 
 ### Environment overrides
 

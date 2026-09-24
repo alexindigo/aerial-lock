@@ -26,6 +26,7 @@ fields keep their defaults.
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
 | `sources`          | array   | `[]`             | Video sources, played in list order (see below). Needs the MpvQml plugin. |
+| `preferredResolution` | number | *(absent)*    | `1080` or `2160`. Optional and **not** in the bundle defaults — absence is the signal. See "Resolution" below. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
 | `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
 
@@ -47,6 +48,9 @@ Each entry needs `type`, `name`, and `source` (all strings). `type` is one
 of `file`, `folder`, `apple`, `community`. A malformed or unknown entry is
 dropped with a startup warning naming its index (`sources[2].type`); the
 rest of the list is kept. `~` and `$HOME` expand in `file`/`folder` paths.
+Remote sources (`apple`/`community`) may also carry `minResolution` /
+`maxResolution` (`1080` or `2160`) — the hard band fetch stays within (see
+"Resolution"). An invalid band value drops the source with a warning.
 
 - `file` / `folder` — local; played directly. Missing paths are skipped by
   mpv (error logged, playlist moves on), never a crash.
@@ -108,17 +112,38 @@ installed bundle is read.
 `community` entry of your `sources` list:
 
 ```
-aerial-lock-fetch [--limit N] [--quality 1080]
+aerial-lock-fetch [--limit N]
 ```
 
 `--limit N` fetches only the first N assets **per source** (good for a
-first run); `--quality` accepts only `1080` in v1 — 1080p H.264 preferred,
-then the 1080 SDR/HDR fields; a pack with no 1080 URLs is warned about and
-skipped (today both live community packs are 4K-only). Existing clips are
-skipped; partial downloads resume. Requires `curl`, `python3`, and `tar`.
+first run). Existing clips are skipped; partial downloads resume. Requires
+`curl`, `python3`, and `tar`.
 
 The locker itself never touches the network. An empty `sources` list (the
 default) is the solid `backgroundColor`.
+
+### Resolution
+
+Fetch picks one URL per asset from a **hard band** and a **soft
+preference**:
+
+- The band is the source's optional `minResolution`/`maxResolution`
+  (`1080` or `2160`). Nothing outside it is downloaded — a 4K-only pack
+  with `maxResolution: 1080` contributes nothing (warned and skipped).
+  Omitted `min` means 0; omitted `max` means no ceiling.
+- `preferredResolution` (`1080` or `2160`, global) picks inside the band:
+  the same height when available, else the next height **up** — never past
+  `maxResolution`. A 4K-only pack with preference 1080 downloads its 4K
+  clips.
+
+`preferredResolution` is **existence-written, never overwritten**: when the
+key is absent from your `config.json` and outputs are visible (the locker
+on start, or fetch under niri/Hyprland), it is stamped from the largest
+connected output's logical height (`>= 2160` → 2160, else 1080). A key
+already in the file is never touched — even an invalid one (an out-of-band
+value is ignored with a warning, and left in the file). If the key is
+absent and no outputs are visible, that run picks the highest in-band URL
+and writes nothing.
 
 ## Known limitations
 
