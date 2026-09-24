@@ -25,10 +25,16 @@ fields keep their defaults.
 |--------------------|---------|------------------|------------------------------------------------|
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
-| `video`            | string  | `""`             | Video file behind the panel, looped. Empty = solid `backgroundColor`. Needs the MpvQml plugin. |
-| `videoDir`         | string  | `""`             | Directory of videos as a looping playlist. Ignored when `video` is set. |
+| `video`            | string  | `""`             | Video file behind the panel, looped. Wins over `videoDir` and the Apple cache. Empty = union of both. Needs the MpvQml plugin. |
+| `videoDir`         | string  | `""`             | Directory of videos as a looping playlist, unioned with the Apple cache. Ignored when `video` is set. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
 | `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
+
+### `apple` (object)
+
+| Field     | Type    | Default | Description                                       |
+|-----------|---------|---------|---------------------------------------------------|
+| `enabled` | boolean | `true`  | Play clips from the Apple Aerial cache (see below). `false` skips the cache without deleting it. |
 
 ### `panel` (object)
 
@@ -63,6 +69,30 @@ requested file is missing or unparseable.
 
 User-supplied translation files are **not yet supported** — only the
 installed bundle is read.
+
+## Apple Aerial cache
+
+`aerial-lock-fetch` (opt-in, run manually) downloads Apple's Aerial clips
+into `$XDG_CACHE_HOME/aerial-lock/apple` (or `~/.cache/aerial-lock/apple`):
+
+```
+aerial-lock-fetch [--limit N] [--quality 1080]
+```
+
+`--limit N` fetches only the first N assets (good for a first run);
+`--quality` accepts only `1080` in v1 (1080p H.264). Existing clips are
+skipped; partial downloads resume. Requires `curl`, `python3`, and `tar`.
+
+The locker itself never touches the network. At lock time the video source
+is resolved as:
+
+1. `video` set → that file, looped. Nothing else is consulted.
+2. Otherwise → one playlist unioning `videoDir` and the cache's `videos/`
+   (either side may be empty; a missing cache is a no-op, not an error).
+3. Neither → solid `backgroundColor`.
+
+The cache is only played when `entries.json` (the manifest sentinel) exists
+in the cache directory and `apple.enabled` is `true`.
 
 ## Known limitations
 
@@ -163,6 +193,7 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
   "backgroundColor": "#1a1a2e",
   "video": "",
   "videoDir": "",
+  "apple": { "enabled": true },
   "pamService": "login",
   "fallbackQuitMs": 3000,
   "panel": {
