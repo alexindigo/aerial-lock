@@ -6,7 +6,8 @@ future work is listed under [Roadmap](#roadmap).
 
 Targets `ext-session-lock-v1`. Developed and tested on Niri; other
 compositors are untested — see [Compositor support](#compositor-support).
-Not compatible with GNOME.
+Not compatible with GNOME or KDE Plasma (their compositors do not expose
+`ext-session-lock-v1` to third-party lockers).
 
 ## Installation
 
@@ -132,9 +133,9 @@ Two separate questions: does the compositor implement
 | Niri             | Yes       | Tested      |
 | Hyprland         | Yes       | Tested      |
 | Sway >= 1.9      | Yes       | Untested    |
-| KDE KWin >= 6.0  | Yes       | Untested    |
 | Cosmic           | Yes       | Untested    |
 | river / Wayfire  | Probably  | Untested    |
+| KDE KWin / Plasma| No        | —           |
 | GNOME / Mutter   | No        | —           |
 
 The password panel is placed on the compositor's focused output when that
@@ -200,6 +201,12 @@ aerial-unlock --purge    # kill stale aerial-lock processes, then recover
 - **Hyprland < 0.56.1** — same flag path; no other command exists.
 - **GNOME** — the protocol isn't exposed to third-party clients; not
   applicable.
+- **KDE Plasma (KWin)** — KWin does not implement `ext-session-lock-v1`;
+  it is its own lock daemon (KScreenLocker in-process) and only offers the
+  private `kde-lockscreen-overlay-v1`. Quickshell correctly reports
+  "compositor does not support the ext-session-lock-v1 protocol". This is
+  a compositor gap, not a Quickshell or aerial-lock one; every third-party
+  session-lock client is affected the same way. Not applicable.
 
 `loginctl unlock-session` does **not** work anywhere — lock state lives in
 the compositor, not logind. "Correct password always fails" is a different
