@@ -40,7 +40,8 @@ Scope {
     // file → that clip, folder → that directory, apple/community → its
     // cache when fetched. Nothing configured = solid backgroundColor.
     // LockBackground.qml is the only MpvQml importer and is only loaded
-    // when the list is non-empty.
+    // when the list is non-empty — so libmpv is never started with nothing
+    // to play. qt6-mpvqml itself is a hard dependency (README).
     readonly property var bgItems: sourceCache.items
     readonly property bool hasBackground: bgItems.length > 0
 
@@ -230,8 +231,9 @@ Scope {
 
             // Video background (d32) — behind LockContent (first child
             // paints last-on-bottom). Never eager: active stays false when
-            // no source is configured, so the MpvQml import never runs on
-            // machines without the plugin.
+            // no source is configured, so libmpv is not started for
+            // nothing. This is resource isolation, not plugin-optionality:
+            // qt6-mpvqml is required.
             Loader {
                 id: bgLoader
                 anchors.fill: parent

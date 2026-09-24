@@ -1,8 +1,9 @@
 # aerial-lock
 
-Wayland session-lock client: PAM authentication over a solid background or
-an optional looping video, with layered JSON config and i18n. Planned
-future work is listed under [Roadmap](#roadmap).
+Wayland session-lock client: PAM authentication over a looping video
+background (local files or Apple/community packs) with a solid colour
+until the first frame, layered JSON config and i18n. Planned future work
+is listed under [Roadmap](#roadmap).
 
 Targets `ext-session-lock-v1`. Developed and tested on Niri; other
 compositors are untested — see [Compositor support](#compositor-support).
@@ -17,13 +18,13 @@ Not yet packaged for any distribution — install from this repo:
 sudo make install
 ```
 
-Runtime requirement: [Quickshell](https://github.com/outfoxxed/quickshell)
-(any build — not tied to a specific fork). Optional:
-[qt6-mpvqml](https://github.com/alexindigo/mpvqml) enables the video
-background (a list of local files/folders and fetchable Apple/community
-packs, played in order); without it the locker falls back to the solid
-`backgroundColor`. The optional `aerial-lock-fetch` pack downloader needs
-`curl`, `python3`, and `tar`.
+Runtime requirements: [Quickshell](https://github.com/outfoxxed/quickshell)
+(any build — not tied to a specific fork) and
+[qt6-mpvqml](https://github.com/alexindigo/mpvqml), which plays the video
+background. With an empty `sources` list the player is never started and
+the screen stays `backgroundColor`; with sources it shows `backgroundColor`
+until the first frame decodes. The `aerial-lock-fetch` pack downloader
+(optional) needs `curl`, `python3`, and `tar`.
 
 ### Build-time PAM_MAX_RESP_SIZE override
 
