@@ -2,17 +2,17 @@ import QtQuick
 import MpvQml
 
 // Video background for a lock surface. Pure scenery: no config access, no
-// PAM, no input. The parent (Lock.qml) injects sourcePath (file pin) or
-// directories (playlist union) after load and calls shutdown() on unlock;
-// playback errors surface as loadFailed for the parent to log.
+// PAM, no input. The parent (Lock.qml) injects items after load and calls
+// shutdown() on unlock; playback errors surface as loadFailed for the
+// parent to log.
 Item {
     id: root
 
-    // File-pin mode: this one file, looped. Wins over directories when set.
-    property string sourcePath: ""
-    // Directory/union mode: first directory replaces, the rest append.
-    // Missing or empty directories are a no-op in the plugin, not an error.
-    property var directories: []
+    // One mpv playlist in list order: {kind: "file"} loads the clip,
+    // {kind: "dir"} expands to the directory's videos. The first playable
+    // entry replaces, the rest append. Missing files/dirs are skipped by
+    // mpv (error + advance), never a crash.
+    property var items: []
 
     signal loadFailed(string message)
 
@@ -23,23 +23,26 @@ Item {
         player.stop(false)
     }
 
-    // Single drive point for both source modes: the parent assigns the
-    // properties after Component.onCompleted, so loading must hang off
-    // property changes, not construction.
+    // Single drive point: the parent assigns items after
+    // Component.onCompleted, so loading hangs off the property change,
+    // not construction.
     function applySource() {
-        if (sourcePath.length > 0) {
-            player.source = sourcePath
+        if (items.length === 0)
             return
+        var first = true
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i]
+            if (!it || !it.path || it.path.length === 0)
+                continue
+            if (it.kind === "dir")
+                player.loadDirectory(it.path, filters, first ? "replace" : "append", "name")
+            else
+                player.load(it.path, first ? "replace" : "append")
+            first = false
         }
-        if (directories.length === 0)
-            return
-        player.loadDirectory(directories[0], filters, "replace", "name")
-        for (var i = 1; i < directories.length; i++)
-            player.loadDirectory(directories[i], filters, "append", "name")
     }
 
-    onSourcePathChanged: applySource()
-    onDirectoriesChanged: applySource()
+    onItemsChanged: applySource()
 
     MpvPlayer {
         id: player
@@ -48,8 +51,11 @@ Item {
         visible: hasVideo         // solid surface color until a frame exists
         mute: true
         fillMode: "preserveAspectCrop"
-        loopFile: root.sourcePath.length > 0 ? "inf" : "no"
-        loopPlaylist: root.sourcePath.length > 0 ? "no" : "inf"
+        // A lone file loops seamlessly (loopFile); anything else is a
+        // playlist and loops as one.
+        loopFile: root.items.length === 1
+                  && root.items[0].kind === "file" ? "inf" : "no"
+        loopPlaylist: "inf"
 
         onErrorOccurred: function (code, message) {
             root.loadFailed(message)

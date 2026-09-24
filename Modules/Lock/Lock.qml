@@ -36,30 +36,16 @@ Scope {
 
     property string panelScreenName: ""
 
-    // Video background resolution (d32 + d35): a `video` file pin wins
-    // over everything; otherwise the playlist is the union of `videoDir`
-    // and the Apple cache; neither means solid backgroundColor.
+    // Video background resolution (d36): config sources[] in list order —
+    // file → that clip, folder → that directory, apple/community → its
+    // cache when fetched. Nothing configured = solid backgroundColor.
     // LockBackground.qml is the only MpvQml importer and is only loaded
-    // when a source is configured.
-    readonly property string videoPath: {
-        var v = config.data.video
-        return (v && v.length > 0) ? v : ""
-    }
-    readonly property var videoDirs: {
-        if (videoPath.length > 0)
-            return []
-        var dirs = []
-        var d = config.data.videoDir
-        if (d && d.length > 0)
-            dirs.push(d)
-        if (apple.videosDir.length > 0)
-            dirs.push(apple.videosDir)
-        return dirs
-    }
-    readonly property bool hasBackground: videoPath.length > 0 || videoDirs.length > 0
+    // when the list is non-empty.
+    readonly property var bgItems: sourceCache.items
+    readonly property bool hasBackground: bgItems.length > 0
 
-    AppleCache {
-        id: apple
+    SourceCache {
+        id: sourceCache
         config: root.config
     }
 
@@ -148,10 +134,9 @@ Scope {
                 source: "LockBackground.qml"
 
                 onLoaded: {
-                    // sourcePath first: LockBackground.applySource() runs
-                    // on property change and prefers the file pin when set.
-                    item.sourcePath = root.videoPath
-                    item.directories = root.videoDirs
+                    // LockBackground.applySource() runs on the items change;
+                    // the list is final by the time the Loader activates.
+                    item.items = root.bgItems
                     // qmllint disable missing-property
                     // Loader.item is typed QObject; the loaded item is
                     // LockBackground.qml, which defines the loadFailed

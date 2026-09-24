@@ -4,4 +4,4 @@ PamLimits 1.0 PamLimits.qml
 PamProbe 1.0 PamProbe.qml
 BuildFlags 1.0 BuildFlags.qml
 Compositor 1.0 Compositor.qml
-AppleCache 1.0 AppleCache.qml
+SourceCache 1.0 SourceCache.qml

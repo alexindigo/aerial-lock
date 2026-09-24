@@ -35,11 +35,7 @@ Scope {
     readonly property var schema: ({
         language: "string",
         backgroundColor: "string",
-        video: "string",
-        videoDir: "string",
-        apple: ({
-            enabled: "boolean"
-        }),
+        sources: "array",
         pamService: "string",
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",
@@ -138,8 +134,12 @@ Scope {
         if (userRaw && userRaw.length > 0) {
             try {
                 var user = JSON.parse(userRaw)
+                if (migrateUserConfig(user)) {
+                    userFile.setText(JSON.stringify(user, null, 2) + "\n")
+                }
                 merged = deepMerge(defaults, user)
                 sanitise(merged, defaults, root.schema, "")
+                merged.sources = cleanSources(merged.sources)
             } catch (e) {
                 Logger.w("ConfigStore", "user config.json parse error (" + e + "); using defaults")
                 merged = defaults
@@ -199,6 +199,69 @@ Scope {
         return v !== null && typeof v === "object" && !Array.isArray(v)
     }
 
+    // d36: source name → cache directory name (spaces to '-', everything
+    // outside [A-Za-z0-9._-] stripped). The fetch script implements the
+    // same rule — they must stay identical.
+    function sanitizeSourceName(name) {
+        return name.replace(/ /g, "-").replace(/[^A-Za-z0-9._-]/g, "")
+    }
+
+    // Per-entry tolerance (d17 spirit): a bad entry is dropped with a
+    // warning naming its index; the rest of the list is kept. Each
+    // surviving entry gains a `safeName` for cache-dir use.
+    function cleanSources(list) {
+        var out = []
+        var seen = ({})
+        for (var i = 0; i < list.length; i++) {
+            var s = list[i]
+            if (!isPlainObject(s) || typeof s.type !== "string" || s.type.length === 0
+                    || typeof s.name !== "string" || s.name.length === 0
+                    || typeof s.source !== "string" || s.source.length === 0) {
+                Logger.w("ConfigStore", "sources[" + i + "] needs type/name/source strings; entry dropped")
+                continue
+            }
+            if (["apple", "community", "folder", "file"].indexOf(s.type) === -1) {
+                Logger.w("ConfigStore", "sources[" + i + "].type \"" + s.type + "\" unknown; entry dropped")
+                continue
+            }
+            var safe = sanitizeSourceName(s.name)
+            if (safe.length === 0) {
+                Logger.w("ConfigStore", "sources[" + i + "].name sanitizes to nothing; entry dropped")
+                continue
+            }
+            if (seen[safe]) {
+                Logger.w("ConfigStore", "sources[" + i + "] duplicates cache name \"" + safe + "\"; later entry dropped")
+                continue
+            }
+            seen[safe] = true
+            out.push({ type: s.type, name: s.name, safeName: safe, source: s.source })
+        }
+        return out
+    }
+
+    // d36 one-shot migration: a user config with the d32/d35 keys and no
+    // `sources` gets them rewritten into entries, written back once.
+    function migrateUserConfig(user) {
+        if ("sources" in user)
+            return false
+        if (!("video" in user) && !("videoDir" in user) && !("apple" in user))
+            return false
+        var migrated = []
+        if (typeof user.video === "string" && user.video.length > 0)
+            migrated.push({ type: "file", name: "video", source: user.video })
+        if (typeof user.videoDir === "string" && user.videoDir.length > 0)
+            migrated.push({ type: "folder", name: "videoDir", source: user.videoDir })
+        if (isPlainObject(user.apple) && user.apple.enabled === true)
+            migrated.push({ type: "apple", name: "Apple TV",
+                            source: "https://sylvan.apple.com/Aerials/resources-16.tar" })
+        user.sources = migrated
+        delete user.video
+        delete user.videoDir
+        delete user.apple
+        Logger.w("ConfigStore", "migrated video/videoDir/apple to sources[]")
+        return true
+    }
+
     // Every base key exists in the result; an override wins leaf-by-leaf,
     // recursing only when both sides are plain objects. Unknown override
     // keys are carried but unread.
@@ -225,6 +288,12 @@ Scope {
                     sanitise(candidate[key], defaults[key], spec[key], fullPath)
                 } else {
                     warnSubtree(spec[key], fullPath)
+                    candidate[key] = defaults[key]
+                }
+            } else if (spec[key] === "array") {
+                if (!Array.isArray(candidate[key])) {
+                    Logger.w("ConfigStore", fullPath + " has wrong type (expected array, got "
+                             + typeof candidate[key] + "); using default")
                     candidate[key] = defaults[key]
                 }
             } else if (typeof candidate[key] !== spec[key]) {
@@ -255,6 +324,12 @@ Scope {
             if (isPlainObject(spec[key])) {
                 if (!isPlainObject(data[key]) || !checkBundle(data[key], spec[key], fullPath)) {
                     Logger.w("ConfigStore", "bundle defaults invalid at " + fullPath)
+                    return false
+                }
+            } else if (spec[key] === "array") {
+                if (!Array.isArray(data[key])) {
+                    Logger.w("ConfigStore", "bundle defaults invalid at " + fullPath
+                             + " (expected array)")
                     return false
                 }
             } else if (typeof data[key] !== spec[key]) {
