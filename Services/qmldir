@@ -5,3 +5,4 @@ PamProbe 1.0 PamProbe.qml
 BuildFlags 1.0 BuildFlags.qml
 Compositor 1.0 Compositor.qml
 SourceCache 1.0 SourceCache.qml
+LockContext 1.0 LockContext.qml

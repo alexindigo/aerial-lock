@@ -56,6 +56,79 @@ Scope {
         return ""
     }
 
+    function sentinelTextFor(safeName) {
+        for (var i = 0; i < sentinels.count; i++) {
+            var o = sentinels.objectAt(i)
+            // qmllint disable missing-property
+            if (o && o.safeName === safeName)
+                return o.sentinelText
+            // qmllint enable missing-property
+        }
+        return ""
+    }
+
+    // d38: resolve a playing path to its source + manifest metadata.
+    // Returns null when the path belongs to no configured source. Manifest
+    // fields (name/scene/timeOfDay/…) are "" when the source has no
+    // entries.json for it (file/folder, or an unfetched remote). Apple POI
+    // values are strings-bundle keys, not prose — poi is only filled for
+    // community packs this plan (d38 §3 deferral, no C++ plist parser).
+    property var _entriesCache: ({})   // safeName → parsed entries.json
+
+    function _entriesFor(safeName) {
+        if (_entriesCache[safeName] !== undefined)
+            return _entriesCache[safeName]
+        var parsed = null
+        var raw = sentinelTextFor(safeName)
+        if (raw.length > 0) {
+            try { parsed = JSON.parse(raw) } catch (e) { parsed = null }
+        }
+        _entriesCache[safeName] = parsed
+        return parsed
+    }
+
+    function lookup(path) {
+        if (!path || path.length === 0)
+            return null
+        var base = path.split("/").pop()
+        var id = base.replace(/\.[^.]+$/, "")
+        for (var i = 0; i < sources.length; i++) {
+            var src = sources[i]
+            if (src.type === "file") {
+                if (expandHome(src.source) !== path)
+                    continue
+                return { id: id, sourceName: src.name }
+            } else if (src.type === "folder") {
+                var dir = expandHome(src.source)
+                if (path !== dir && !path.startsWith(dir + "/"))
+                    continue
+                return { id: id, sourceName: src.name }
+            } else {
+                var prefix = cacheBase + "/" + src.safeName + "/videos/"
+                if (!path.startsWith(prefix))
+                    continue
+                var entries = _entriesFor(src.safeName)
+                var info = { id: id, sourceName: src.name }
+                var assets = entries ? entries.assets : null
+                if (assets) {
+                    for (var a = 0; a < assets.length; a++) {
+                        if (assets[a].id === id) {
+                            info.name = assets[a].accessibilityLabel || ""
+                            info.secondaryName = assets[a].title || ""
+                            info.scene = assets[a].scene || ""
+                            info.timeOfDay = assets[a].timeOfDay || ""
+                            if (src.type === "community")
+                                info.poi = assets[a].pointsOfInterest || ({})
+                            break
+                        }
+                    }
+                }
+                return info
+            }
+        }
+        return null
+    }
+
     function recompute() {
         var out = []
         for (var i = 0; i < sources.length; i++) {

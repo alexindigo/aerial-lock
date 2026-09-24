@@ -49,6 +49,90 @@ Scope {
         config: root.config
     }
 
+    // d38: the one context object the panel (and future themes) consume.
+    // Lock.qml owns every binding into it; LockContext itself knows no
+    // PAM, no MpvQml, no pixels.
+    //
+    // Grouped-property syntax on alias groups (auth.status: …) compiles
+    // under qmllint but the runtime rejects it ("Cannot assign to
+    // non-existent property") — aliases carry no static group type. Bind
+    // via Binding elements instead.
+    LockContext {
+        id: lockContext
+
+        Component.onCompleted: {
+            submitRequested.connect(root.tryUnlock)
+            dismissRequested.connect(root.dismissRequested)
+        }
+    }
+
+    Binding { target: lockContext.auth; property: "status"; value: root.statusMessage }
+    Binding { target: lockContext.auth; property: "inProgress"; value: root.unlockInProgress }
+    Binding { target: lockContext.auth; property: "isError"; value: root.authIsError }
+    Binding { target: lockContext.auth; property: "responseVisible"; value: pam.responseVisible }
+    Binding { target: lockContext.auth; property: "maxResponseSize"; value: config.pamLimits.maxResponseSize }
+
+    Binding { target: lockContext.session; property: "outputName"; value: root.panelScreenName }
+
+    Connections {
+        target: lockContext.video
+        function onPathChanged() { root.updateVideoInfo(lockContext.video.path) }
+    }
+
+    Connections {
+        target: lockContext.video
+        function onPositionChanged() { root.updatePoi(lockContext.video.position) }
+    }
+
+    function dismissRequested() {
+        logger.d("Lock", "dismissRequested received")
+        if (root.config.buildFlags.debugAllowDismiss) {
+            root.attemptCancelled = true
+            pam.abort()
+            logger.d("Lock", "dismiss: setting root.locked = false")
+            root.locked = false
+        }
+    }
+
+    function updateVideoInfo(path) {
+        var info = sourceCache.lookup(path)
+        lockContext.video.id = (info && info.id) ? info.id : ""
+        lockContext.video.name = (info && info.name) ? info.name : ""
+        lockContext.video.secondaryName = (info && info.secondaryName) ? info.secondaryName : ""
+        lockContext.video.scene = (info && info.scene) ? info.scene : ""
+        lockContext.video.timeOfDay = (info && info.timeOfDay) ? info.timeOfDay : ""
+        lockContext.video.sourceName = (info && info.sourceName) ? info.sourceName : ""
+        lockContext.poi.map = (info && info.poi) ? info.poi : ({})
+        logger.d("LockContext", "video: id=" + lockContext.video.id
+                 + " name=" + lockContext.video.name
+                 + " source=" + lockContext.video.sourceName)
+        updatePoi(lockContext.video.position)
+    }
+
+    function updatePoi(position) {
+        var map = lockContext.poi.map
+        var text = ""
+        var at = -1
+        var nums = []
+        for (var k in map)
+            nums.push(Number(k))
+        nums.sort(function (a, b) { return a - b })
+        for (var j = 0; j < nums.length; j++) {
+            if (position >= nums[j])
+                at = nums[j]
+            else
+                break
+        }
+        if (at >= 0)
+            text = map[String(at)] || ""
+        if (lockContext.poi.text !== text || lockContext.poi.at !== at) {
+            lockContext.poi.text = text
+            lockContext.poi.at = at
+            logger.d("LockContext", "poi: text=\"" + text + "\" at=" + at
+                     + " position=" + position.toFixed(1))
+        }
+    }
+
     Compositor {
         id: compositor
     }
@@ -193,31 +277,27 @@ Scope {
                        && lockSurface.screen.name === root.panelScreenName
             }
 
+            // Video playback export for LockContext. These live INSIDE
+            // the surface: ids are visible only in the subtree of their
+            // declaring object, so bgLoader is unreachable from root.
+            //
+            // qmllint disable missing-property
+            // bgLoader.item is typed QObject; the loaded item is
+            // LockBackground.qml, which defines these — dynamic by design.
+            Binding { target: lockContext.video; property: "position"; value: bgLoader.item ? bgLoader.item.position : 0 }
+            Binding { target: lockContext.video; property: "duration"; value: bgLoader.item ? bgLoader.item.duration : 0 }
+            Binding { target: lockContext.video; property: "hasVideo"; value: bgLoader.item ? bgLoader.item.hasVideo : false }
+            Binding { target: lockContext.video; property: "path"; value: bgLoader.item ? bgLoader.item.currentFilename : "" }
+            // qmllint enable missing-property
+
             LockContent {
                 anchors.fill: parent
                 visible: lockSurface.hostsPanel
                 enabled: lockSurface.hostsPanel
                 focus: lockSurface.hostsPanel
-                statusMessage: root.statusMessage
-                unlockInProgress: root.unlockInProgress
-                responseVisible: pam.responseVisible
+                context: lockContext
                 config: root.config
                 logger: root.logger
-                isErrorState: root.authIsError
-
-                onPasswordSubmitted: function (password) {
-                    root.tryUnlock(password)
-                }
-
-                onDismissRequested: {
-                    logger.d("Lock", "onDismissRequested received")
-                    if (root.config.buildFlags.debugAllowDismiss) {
-                        root.attemptCancelled = true
-                        pam.abort()
-                        logger.d("Lock", "dismiss: setting root.locked = false")
-                        root.locked = false
-                    }
-                }
             }
         }
     }

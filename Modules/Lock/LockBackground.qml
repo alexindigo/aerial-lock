@@ -18,6 +18,22 @@ Item {
 
     readonly property var filters: ["*.mp4", "*.mkv", "*.webm", "*.mov"]
 
+    // d38: playback export for LockContext. The plugin has no
+    // currentFilename Q_PROPERTY, but mpv's `playlist` marks the playing
+    // entry — derive it from there ("" when nothing plays).
+    readonly property real position: player.position
+    readonly property real duration: player.duration
+    readonly property bool hasVideo: player.hasVideo
+    readonly property string currentFilename: {
+        var pl = player.playlist
+        for (var i = 0; i < pl.length; i++) {
+            if (pl[i] && pl[i].current && pl[i].filename)
+                return pl[i].filename
+        }
+        // Single-file mode (player.source) never populates `playlist`.
+        return player.source || ""
+    }
+
     function shutdown() {
         player.paused = true
         player.stop(false)
