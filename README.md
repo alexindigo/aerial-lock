@@ -84,6 +84,8 @@ the bypass: `make DEBUG_VERBOSE=1`.
 
 On first launch, `~/.config/aerial-lock/config.json` is created with defaults.
 See [`docs/config.reference.md`](docs/config.reference.md) for available options.
+The panel's theming contract (planned, not yet loadable) is documented in
+[`docs/theming.md`](docs/theming.md).
 
 ### Video backgrounds
 
