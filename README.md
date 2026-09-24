@@ -19,9 +19,9 @@ sudo make install
 Runtime requirement: [Quickshell](https://github.com/outfoxxed/quickshell)
 (any build — not tied to a specific fork). Optional:
 [qt6-mpvqml](https://github.com/alexindigo/mpvqml) enables the video
-background (a pinned local file, or a playlist unioning `videoDir` and the
-Apple Aerial cache); without it the locker falls back to the solid
-`backgroundColor`. The optional `aerial-lock-fetch` cache downloader needs
+background (a list of local files/folders and fetchable Apple/community
+packs, played in order); without it the locker falls back to the solid
+`backgroundColor`. The optional `aerial-lock-fetch` pack downloader needs
 `curl`, `python3`, and `tar`.
 
 ### Build-time PAM_MAX_RESP_SIZE override
@@ -85,20 +85,31 @@ the bypass: `make DEBUG_VERBOSE=1`.
 On first launch, `~/.config/aerial-lock/config.json` is created with defaults.
 See [`docs/config.reference.md`](docs/config.reference.md) for available options.
 
-### Apple Aerial videos
+### Video backgrounds
 
-`aerial-lock-fetch` downloads Apple's Aerial clips (1080p H.264) into
-`~/.cache/aerial-lock/apple`:
+The `sources` list drives the background — local files and folders plus
+Apple Aerial and community packs, played in list order as one looping
+playlist:
+
+```json
+"sources": [
+  { "type": "apple",  "name": "Apple TV", "source": "https://sylvan.apple.com/Aerials/resources-16.tar" },
+  { "type": "folder", "name": "Personal", "source": "~/Videos/locker" }
+]
+```
+
+Remote packs are downloaded by hand — the locker never fetches:
 
 ```
 aerial-lock-fetch --limit 5     # a first, small run
-aerial-lock-fetch               # everything
+aerial-lock-fetch               # everything in sources[]
 ```
 
-The locker never downloads anything itself: with no `video` pin, the lock
-background is one looping playlist unioning `videoDir` and the cache —
-either side may be empty, and an empty cache is a no-op, not an error.
-Set `"apple": { "enabled": false }` to skip the cache without deleting it.
+Clips cache under `~/.cache/aerial-lock/<name>/`; a pack plays only once
+fetched, and an unfetched pack is skipped silently. See
+[`docs/config.reference.md`](docs/config.reference.md) for the full
+`sources` reference, migration from the old `video`/`videoDir`/`apple`
+keys, and the known 4K-only state of today's community packs.
 
 ### Environment overrides
 
@@ -198,13 +209,12 @@ strand case.
 
 ## Roadmap
 
-Planned, in rough order: rotation, POI overlays, and community packs for
-the video background (playing a local file or directory behind the lock
-panel and fetching/caching Apple's Aerial clips are implemented),
-compositor integrations (idle/suspend/session events), then distribution
-(AUR packaging, systemd unit). The detailed phase list lives in the
-project's planning documents; nothing shipped today depends on unshipped
-features.
+Planned, in rough order: POI overlays / location metadata for the video
+background (local sources and Apple/community packs, including fetch and
+cache, are implemented), compositor integrations (idle/suspend/session
+events), then distribution (AUR packaging, systemd unit). The detailed
+phase list lives in the project's planning documents; nothing shipped
+today depends on unshipped features.
 
 ## License
 

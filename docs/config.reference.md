@@ -25,16 +25,48 @@ fields keep their defaults.
 |--------------------|---------|------------------|------------------------------------------------|
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
-| `video`            | string  | `""`             | Video file behind the panel, looped. Wins over `videoDir` and the Apple cache. Empty = union of both. Needs the MpvQml plugin. |
-| `videoDir`         | string  | `""`             | Directory of videos as a looping playlist, unioned with the Apple cache. Ignored when `video` is set. |
+| `sources`          | array   | `[]`             | Video sources, played in list order (see below). Needs the MpvQml plugin. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
 | `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
 
-### `apple` (object)
+### `sources` (array)
 
-| Field     | Type    | Default | Description                                       |
-|-----------|---------|---------|---------------------------------------------------|
-| `enabled` | boolean | `true`  | Play clips from the Apple Aerial cache (see below). `false` skips the cache without deleting it. |
+One list of video sources, played in order as a single looping playlist
+behind the panel:
+
+```json
+"sources": [
+  { "type": "file",      "name": "One clip",       "source": "/tmp/blue.mp4" },
+  { "type": "folder",    "name": "Personal",       "source": "~/Videos/locker" },
+  { "type": "apple",     "name": "Apple TV",       "source": "https://sylvan.apple.com/Aerials/resources-16.tar" },
+  { "type": "community", "name": "Community 2026", "source": "https://aerialscreensaver.github.io/community-2026" }
+]
+```
+
+Each entry needs `type`, `name`, and `source` (all strings). `type` is one
+of `file`, `folder`, `apple`, `community`. A malformed or unknown entry is
+dropped with a startup warning naming its index (`sources[2].type`); the
+rest of the list is kept. `~` and `$HOME` expand in `file`/`folder` paths.
+
+- `file` / `folder` — local; played directly. Missing paths are skipped by
+  mpv (error logged, playlist moves on), never a crash.
+- `apple` / `community` — remote packs. The locker never downloads; it plays
+  the pack's cache only when `aerial-lock-fetch` has fetched it (the
+  `entries.json` sentinel exists), else the entry is silently skipped.
+
+The cache directory for a remote source is
+`$XDG_CACHE_HOME/aerial-lock/<name>/` (else `~/.cache/...`), with the name
+sanitized: spaces become `-`, anything outside `[A-Za-z0-9._-]` is stripped.
+Two sources sanitizing to the same name → the later one is dropped with a
+warning.
+
+**Migration from d32/d35 configs:** on first launch with an old config that
+has `video`, `videoDir`, or `apple` but no `sources`, those keys are
+rewritten into `sources` entries (`video` → `file`, `videoDir` → `folder`,
+`apple.enabled: true` → the Apple pack) and removed from your
+`config.json`. Note the d35 cache lived at `…/aerial-lock/apple/`; the
+migrated Apple source caches at `…/aerial-lock/Apple-TV/` — rename the old
+directory if you want to keep the already-downloaded clips.
 
 ### `panel` (object)
 
@@ -70,29 +102,23 @@ requested file is missing or unparseable.
 User-supplied translation files are **not yet supported** — only the
 installed bundle is read.
 
-## Apple Aerial cache
+## Fetching remote sources
 
-`aerial-lock-fetch` (opt-in, run manually) downloads Apple's Aerial clips
-into `$XDG_CACHE_HOME/aerial-lock/apple` (or `~/.cache/aerial-lock/apple`):
+`aerial-lock-fetch` (opt-in, run manually) downloads every `apple` /
+`community` entry of your `sources` list:
 
 ```
 aerial-lock-fetch [--limit N] [--quality 1080]
 ```
 
-`--limit N` fetches only the first N assets (good for a first run);
-`--quality` accepts only `1080` in v1 (1080p H.264). Existing clips are
+`--limit N` fetches only the first N assets **per source** (good for a
+first run); `--quality` accepts only `1080` in v1 — 1080p H.264 preferred,
+then the 1080 SDR/HDR fields; a pack with no 1080 URLs is warned about and
+skipped (today both live community packs are 4K-only). Existing clips are
 skipped; partial downloads resume. Requires `curl`, `python3`, and `tar`.
 
-The locker itself never touches the network. At lock time the video source
-is resolved as:
-
-1. `video` set → that file, looped. Nothing else is consulted.
-2. Otherwise → one playlist unioning `videoDir` and the cache's `videos/`
-   (either side may be empty; a missing cache is a no-op, not an error).
-3. Neither → solid `backgroundColor`.
-
-The cache is only played when `entries.json` (the manifest sentinel) exists
-in the cache directory and `apple.enabled` is `true`.
+The locker itself never touches the network. An empty `sources` list (the
+default) is the solid `backgroundColor`.
 
 ## Known limitations
 
@@ -191,9 +217,9 @@ AERIAL_LOCK_PAM_SERVICE=login qs -p .
 {
   "language": "en",
   "backgroundColor": "#1a1a2e",
-  "video": "",
-  "videoDir": "",
-  "apple": { "enabled": true },
+  "sources": [
+    { "type": "apple", "name": "Apple TV", "source": "https://sylvan.apple.com/Aerials/resources-16.tar" }
+  ],
   "pamService": "login",
   "fallbackQuitMs": 3000,
   "panel": {
