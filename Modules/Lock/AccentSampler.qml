@@ -36,11 +36,18 @@ Item {
         property string shotUrl: ""
     }
 
-    onTrackKeyChanged: {
-        // Never leave the previous track's tint behind.
-        internal.accent = "transparent"
+    function resetTrackSensing() {
+        // Invalidate the entire old shot pipeline, including cached paints.
         settleTimer.stop()
+        writeTimer.stop()
         pollTimer.stop()
+        internal.shotUrl = ""
+        internal.attempt = 0
+        internal.accent = "transparent"
+    }
+
+    onTrackKeyChanged: {
+        resetTrackSensing()
         if (root.trackKey.length > 0)
             settleTimer.restart()
     }
@@ -51,10 +58,7 @@ Item {
         id: settleTimer
         interval: 1500
         repeat: false
-        onTriggered: {
-            internal.attempt = 0
-            root.tryShot()
-        }
+        onTriggered: root.tryShot()
     }
 
     function tryShot() {
