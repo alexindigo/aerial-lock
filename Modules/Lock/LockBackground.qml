@@ -24,6 +24,10 @@ Item {
     readonly property real position: player.position
     readonly property real duration: player.duration
     readonly property bool hasVideo: player.hasVideo
+    // d45: the sensed prominent color of the current frame (transparent
+    // when unsensed). The 600 ms crossfade lives at the value's origin
+    // (AccentSampler) and animates the whole downstream chain.
+    readonly property color accentColor: sampler.accent
     readonly property string currentFilename: {
         var pl = player.playlist
         for (var i = 0; i < pl.length; i++) {
@@ -59,6 +63,12 @@ Item {
     }
 
     onItemsChanged: applySource()
+
+    AccentSampler {
+        id: sampler
+        player: player
+        trackKey: root.currentFilename
+    }
 
     MpvPlayer {
         id: player

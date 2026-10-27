@@ -69,6 +69,10 @@ QtObject {
         property real position: 0          // seconds
         property real duration: 0
         property bool hasVideo: false
+        // d45: the frame's sensed prominent color (transparent when
+        // unsensed). Data only — the context never touches pixels; the
+        // sampler lives in LockBackground and Lock.qml owns the binding.
+        property color accent: "transparent"
     }
 
     property alias poi: poiObj

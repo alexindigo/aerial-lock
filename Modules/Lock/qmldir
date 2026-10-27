@@ -1,6 +1,8 @@
 Lock Lock.qml
 LockContent LockContent.qml
 LockBackground LockBackground.qml
+AccentSampler AccentSampler.qml
+AccentTone AccentTone.js
 ThemeHost ThemeHost.qml
 AuthField AuthField.qml
 Avatar Avatar.qml

@@ -336,6 +336,7 @@ Scope {
             Binding { target: lockContext.video; property: "duration"; value: bgLoader.item ? bgLoader.item.duration : 0 }
             Binding { target: lockContext.video; property: "hasVideo"; value: bgLoader.item ? bgLoader.item.hasVideo : false }
             Binding { target: lockContext.video; property: "path"; value: bgLoader.item ? bgLoader.item.currentFilename : "" }
+            Binding { target: lockContext.video; property: "accent"; value: bgLoader.item ? bgLoader.item.accentColor : "transparent" }
             // qmllint enable missing-property
 
             // Coverage confirmation starts optional theme work; window

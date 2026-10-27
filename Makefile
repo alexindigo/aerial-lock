@@ -83,6 +83,8 @@ install: all
 	install -m 644 Modules/Lock/Lock.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/LockContent.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/LockBackground.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/AccentSampler.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/AccentTone.js $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/ThemeHost.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/AuthField.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/Avatar.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
