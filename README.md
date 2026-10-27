@@ -19,12 +19,14 @@ sudo make install
 ```
 
 Runtime requirements: [Quickshell](https://github.com/outfoxxed/quickshell)
-(any build — not tied to a specific fork) and
+(any build — not tied to a specific fork),
 [qt6-mpvqml](https://github.com/alexindigo/mpvqml), which plays the video
-background. With an empty `sources` list the player is never started and
-the screen stays `backgroundColor`; with sources it shows `backgroundColor`
-until the first frame decodes. The `aerial-lock-fetch` pack downloader
-(optional) needs `curl`, `python3`, and `tar`.
+background, and Qt6's `Qt5Compat.GraphicalEffects` module (`qt6-5compat` on
+Arch) for the frosted-clock effect and avatar masking. With an empty
+`sources` list the player is never started and the screen stays
+`backgroundColor`; with sources it shows `backgroundColor` until the first
+frame decodes. The `aerial-lock-fetch` pack downloader (optional) needs
+`curl`, `python3`, and `tar`.
 
 ### Build-time PAM_MAX_RESP_SIZE override
 
@@ -86,7 +88,13 @@ the bypass: `make DEBUG_VERBOSE=1`.
 
 On first launch, `~/.config/aerial-lock/config.json` is created with defaults.
 See [`docs/config.reference.md`](docs/config.reference.md) for available options.
-The panel's theming contract (planned, not yet loadable) is documented in
+
+### Themes
+
+The lock surface is a full-surface QML theme, selected by filename with the
+`theme` key (default `"Macintosh.qml"`).
+The authoring contract, the shared
+`LockContext` object, and the topic-matching semantics are documented in
 [`docs/theming.md`](docs/theming.md).
 
 ### Video backgrounds

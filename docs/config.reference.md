@@ -25,6 +25,7 @@ fields keep their defaults.
 |--------------------|---------|------------------|------------------------------------------------|
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
+| `theme`            | string  | `"Macintosh.qml"`| Whole-surface theme filename (see below).      |
 | `sources`          | array   | `[]`             | Video sources, played in list order (see below). Needs the MpvQml plugin. |
 | `preferredResolution` | number | *(absent)*    | `1080` or `2160`. Optional and **not** in the bundle defaults — absence is the signal. See "Resolution" below. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
@@ -122,6 +123,20 @@ first run). Existing clips are skipped; partial downloads resume. Requires
 The locker itself never touches the network. An empty `sources` list (the
 default) is the solid `backgroundColor`.
 
+### Theme
+
+`theme` names the whole-surface lock UI. The default is `Macintosh.qml`.
+The value is a plain QML **filename** (no path, no URL, no traversal) —
+anything else is a config bug, warned about and replaced by the built-in
+panel. Lookup order: `~/.config/aerial-lock/themes/<name>` first, then the
+bundle's `/usr/share/aerial-lock/Themes/<name>`; user files win. The file
+is read once per lock — editing it mid-lock never reloads away a partial
+response.
+
+Only clips that fully downloaded play: a remote clip needs its `.mp4`
+present and non-empty plus its sibling `.mp4.done` marker — a partial or
+interrupted download is skipped, never played.
+
 ### Resolution
 
 Fetch picks one URL per asset from a **hard band** and a **soft
@@ -152,13 +167,16 @@ and writes nothing.
   expired password's "new password/retype" prompt) are unreachable — identical
   to swaylock and hyprlock, which are also auth-only. A plain expired password
   still authenticates correctly.
-- **Plaintext password lifetime.** The password is held as a QML string
-  (`pendingPassword`): it lives on the JS heap, cannot be zeroed, and a
-  cleared value survives until garbage collection. The property is cleared
-  *before* `respond()` is called, so it holds a value only across the async
-  gap between submit and the first PAM prompt — typically milliseconds. The
-  exposure is narrowed, not eliminated; a real fix needs an `mlock`ed buffer
-  behind a C++ helper.
+- **Plaintext password lifetime.** The response being edited is held as a
+  QML string in the shared input state (`context.auth.input`): it lives on
+  the JS heap for the whole editing session, cannot be zeroed, and a
+  cleared value survives until garbage collection. On accepted submission
+  the draft is consumed and cleared (all field mirrors follow), and an
+  accepted response queued for PAM's first prompt is cleared *before*
+  `respond()` is called, on failure, abort and teardown. A native undo
+  cannot resurrect consumed text (the authoritative clear is programmatic,
+  which resets the field's undo history). The exposure is narrowed, not
+  eliminated; a real fix needs an `mlock`ed buffer behind a C++ helper.
 
 ## Recovery
 
