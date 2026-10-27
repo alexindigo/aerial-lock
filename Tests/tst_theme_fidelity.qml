@@ -65,6 +65,42 @@ Item {
             close(position(), rest, "failure motion returns to its resting position")
         }
 
+        function collectStatusTexts(item, text, out) {
+            if (item.text === text && item.visible && item.opacity > 0 && item.height > 0)
+                out.push(item)
+            for (var i = 0; i < item.children.length; i++)
+                collectStatusTexts(item.children[i], text, out)
+        }
+
+        function test_prompt_while_typing_data() {
+            var rows = []
+            for (var i = 0; i < bundledThemes.length; i++) {
+                for (var error = 0; error < 2; error++) {
+                    for (var longMessage = 0; longMessage < 2; longMessage++)
+                        rows.push({tag: bundledThemes[i] + "-" + error + "-" + longMessage,
+                                   filename: bundledThemes[i], error: !!error,
+                                   message: longMessage
+                                       ? "Verification challenge: enter the six-digit code from your security token, followed by the recovery suffix supplied by your administrator."
+                                       : "Token code:"})
+                }
+            }
+            return rows
+        }
+
+        function test_prompt_while_typing(data) {
+            load(data.filename)
+            ctx.auth.status = data.message
+            ctx.auth.isError = data.error
+            theme.focusInput()
+            keyClick(Qt.Key_A)
+            tryCompare(ctx.auth.input, "text", "a")
+            tryVerify(function () {
+                var texts = []
+                collectStatusTexts(theme, data.message, texts)
+                return texts.length > 0
+            }, 500, "non-routine instructions stay visible while entering a response")
+        }
+
         function init() {
             ctx = createTemporaryObject(contextComponent, root)
             ctx.session.loginName = "tester"

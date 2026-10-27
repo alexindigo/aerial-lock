@@ -66,9 +66,11 @@ FocusScope {
     // The real PAM prompt/error text for the field slot: shown whenever it
     // differs from the routine password prompt (or is an error); at rest the
     // reference's static placeholder shows instead.
+    readonly property bool hasNonRoutineStatus: context.auth.isError
+        || (context.auth.status.length > 0 && context.auth.status !== context.labels.prompt)
     readonly property string slotMessage: {
         var st = context.auth.status
-        if (context.auth.isError || (st.length > 0 && st !== context.labels.prompt))
+        if (hasNonRoutineStatus)
             return st
         return "PASSWORD REQUIRED"
     }
@@ -310,11 +312,12 @@ FocusScope {
                         }
                     }
 
-                    // Long real messages leave the slot and wrap here,
-                    // growing the card.
+                    // Instructions leave the overlapping placeholder slot
+                    // while typing, and wrap here whenever they need room.
                     Text {
+                        objectName: "statusText"
                         visible: root.statusNeedsWrap
-                                 && root.context.auth.input.text.length === 0
+                                 || (root.hasNonRoutineStatus && root.context.auth.input.text.length > 0)
                         width: parent.width
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
