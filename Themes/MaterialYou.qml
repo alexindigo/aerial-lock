@@ -88,12 +88,32 @@ FocusScope {
 
     // One hover notice for every unavailable control; never interactive.
     property string hoverNotice: ""
+
+    // A single presentation transform fits the actual, message-sized group.
+    // Reserve a notice lane on either side of its centered height so its
+    // existing center and proportions stay intact, including while hovering.
+    Item {
+        id: composition
+        anchors.centerIn: parent
+        width: group.implicitWidth
+        height: group.implicitHeight
+        scale: Math.max(0, Math.min(1,
+            (root.width - 40 * root.s) / Math.max(1, width),
+            (root.height - 40 * root.s)
+                / Math.max(1, height + 2 * (12 * root.s + noticeLabel.height))))
+    }
+
     Text {
         id: noticeLabel
         objectName: "noticeLabel"
+        parent: composition
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: group.bottom
         anchors.topMargin: 12 * root.s
+        width: parent.width
+        height: Math.max(implicitHeight, 14 * root.s)
+        wrapMode: Text.WordWrap
+        horizontalAlignment: Text.AlignHCenter
         visible: root.hoverNotice.length > 0
         text: root.hoverNotice
         font.family: root.uiFont
@@ -108,6 +128,7 @@ FocusScope {
     GridLayout {
         id: group
         objectName: "group"
+        parent: composition
         anchors.centerIn: parent
         columns: root.stacked ? 1 : 2
         columnSpacing: 96 * root.s

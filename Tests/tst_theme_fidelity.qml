@@ -101,6 +101,62 @@ Item {
             }, 500, "non-routine instructions stay visible while entering a response")
         }
 
+        function insideSurface(obj, what) {
+            var tl = obj.mapToItem(theme, 0, 0)
+            var br = obj.mapToItem(theme, obj.width, obj.height)
+            verify(br.x > tl.x && br.y > tl.y, what + " has area")
+            verify(tl.x >= -0.75 && tl.y >= -0.75
+                   && br.x <= theme.width + 0.75 && br.y <= theme.height + 0.75,
+                   what + " within " + theme.width + "x" + theme.height
+                   + ": (" + tl.x + ", " + tl.y + ")..(" + br.x + ", " + br.y + ")")
+        }
+
+        function test_portrait_bounds_data() {
+            var rows = []
+            var sizes = [[492, 768], [600, 1024], [768, 1366]]
+            for (var i = 0; i < bundledThemes.length; i++) {
+                for (var j = 0; j < sizes.length; j++) {
+                    for (var longMessage = 0; longMessage < 2; longMessage++)
+                        rows.push({tag: bundledThemes[i] + "-" + sizes[j].join("x") + "-" + longMessage,
+                                   filename: bundledThemes[i], w: sizes[j][0], h: sizes[j][1],
+                                   message: longMessage ? ("Verification challenge: enter the six-digit code from your security token, followed by the recovery suffix supplied by your administrator. Keep this instruction visible until the complete response has been entered. ").repeat(3) : ""})
+                }
+            }
+            return rows
+        }
+
+        function test_portrait_bounds(data) {
+            load(data.filename, data.w, data.h)
+            ctx.auth.status = data.message
+            if (theme.hoverNotice !== undefined)
+                theme.hoverNotice = "Switching users is not implemented yet"
+            wait(100)
+            waitForRendering(theme)
+            var cores = []
+            collectCores(theme, cores)
+            compare(cores.length, 1)
+            insideSurface(cores[0], "auth field")
+            var submitNames = {"Windows7.qml": "submitArrow", "MaterialYou.qml": "unlockPill",
+                               "Enfield.qml": "submitArrow", "Clockwork.qml": "enterKey"}
+            if (submitNames[data.filename])
+                insideSurface(region(submitNames[data.filename]).obj, "submit control")
+            // Macintosh's submission surface is the field (Return), not a button.
+            if (data.message.length > 0) {
+                var texts = []
+                collectStatusTexts(theme, data.message, texts)
+                verify(texts.length > 0, "wrapped status visible")
+                for (var i = 0; i < texts.length; i++)
+                    insideSurface(texts[i], "wrapped status")
+            }
+            if (theme.hoverNotice !== undefined) {
+                var notices = []
+                collectStatusTexts(theme, theme.hoverNotice, notices)
+                verify(notices.length > 0, "hover notice visible")
+                for (var j = 0; j < notices.length; j++)
+                    insideSurface(notices[j], "hover notice")
+            }
+        }
+
         function init() {
             ctx = createTemporaryObject(contextComponent, root)
             ctx.session.loginName = "tester"
