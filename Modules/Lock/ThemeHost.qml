@@ -209,6 +209,10 @@ Item {
 
     Connections {
         target: context.auth.input
+        function onHandoffStateChanged() {
+            if (internal.handoffPending && context.auth.input.handoffState === "awaitingClaim")
+                handoffClaimGrace.restart()
+        }
         function onHandoffCompleted() {
             root.promote()
         }
@@ -246,7 +250,6 @@ Item {
                 // during the handoff is not a loading timeout.
                 deadline.stop()
                 internal.handoffPending = true
-                handoffClaimGrace.restart()
                 root.context.auth.input.requestHandoff()
             } catch (error) {
                 root.failSelected("theme contract: " + error)
