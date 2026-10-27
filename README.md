@@ -92,8 +92,11 @@ See [`docs/config.reference.md`](docs/config.reference.md) for available options
 ### Themes
 
 The lock surface is a full-surface QML theme, selected by filename with the
-`theme` key (default `"Macintosh.qml"`).
-The authoring contract, the shared
+`theme` key (default `"Macintosh.qml"`). Five ship in the bundle —
+Macintosh, Windows7, MaterialYou, Enfield, Clockwork — and you can drop
+your own into `~/.config/aerial-lock/themes/` (user files win over
+same-named bundled ones). Enfield prefers mountain videos; the other themes
+play your configured pool as-is. The authoring contract, the shared
 `LockContext` object, and the topic-matching semantics are documented in
 [`docs/theming.md`](docs/theming.md).
 

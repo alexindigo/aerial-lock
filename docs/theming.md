@@ -1,5 +1,8 @@
 # Theming
 
+Aerial's lock surface is a full-surface QML theme. Five ship in the bundle;
+users may drop their own into `~/.config/aerial-lock/themes/`.
+
 ## Selecting a theme
 
 ```json
@@ -34,6 +37,19 @@ Bundled themes:
 | Theme | Look | Topic preference |
 |---|---|---|
 | `Macintosh.qml` (default) | Centered date + large frosted clock top; name/field bottom (d45: no avatar), over video | none |
+| `Windows7.qml` | Faithful qylock `windows_7` adaptation: centered glass-framed square avatar, field + attached arrow, Switch User and full footer bar | none |
+| `MaterialYou.qml` | Faithful qylock `material-you` light-variant composition: stacked clock + date pill, QUICK SETTINGS grid, notification-style auth card. d45: the tonal palette rotates to the video's sensed accent hue (static lavender when unsensed) | none |
+| `Enfield.qml` | Faithful qylock `enfield`: Orbitron clock top-left, line-dot divider, standalone password pill with star mask + glowing star caret, footer. d45: the sakura accent tier (divider/caret/submit/petals/atmosphere) follows the video's sensed accent hue | `mountain`, `mountains` |
+| `Clockwork.qml` | Faithful qylock `orbital`: two numbered minute/second scales cropped at the left edge, reading pill + hour + date, top-right action strip, right-aligned auth. d45: reference gray tier brightened + text shadows for bright-video contrast (recorded palette deviation) | none |
+
+The four qylock-derived themes adapt `Darkkal44/qylock` @ `f6561e2` (GPLv3;
+`material-you`'s metadata separately declares MIT) — see
+`Themes/ATTRIBUTION.md` for the full notice. Their system-action controls
+(user switching, session selection, restart/shutdown/suspend) are drawn in
+their reference positions but **visibly unavailable** (dimmed, with a hover
+notice): the backend is a follow-up TODO, not a hidden no-op. The real
+authentication submit controls (arrow/UNLOCK/ENTER KEY) work through the
+shared input core.
 
 ## Writing a theme
 
@@ -111,7 +127,8 @@ Shared building blocks you can import from `root:/Modules/Lock`:
   initials/person fallback otherwise. Inputs: `source`, `loginName`,
   `diameter`, `fallbackFill`, `foreground`, and (d44) `cornerRadius` —
   negative (the default) keeps the circle; a value in px rounds the image,
-  initials and person fallback identically.
+  initials and person fallback identically (used by Windows7's square
+  crop).
 - **`FrostedText`** — translucent digits: blurred backdrop inside crisp
   glyph silhouettes. Inputs: `scenery` (an Item, e.g. your `backdrop`),
   `text`, `fontPixelSize`, `fontFamily`, `fontBold`, `padding`,

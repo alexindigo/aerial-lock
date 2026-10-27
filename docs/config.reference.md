@@ -133,6 +133,11 @@ bundle's `/usr/share/aerial-lock/Themes/<name>`; user files win. The file
 is read once per lock — editing it mid-lock never reloads away a partial
 response.
 
+Bundled: `Macintosh.qml`, `Windows7.qml`, `MaterialYou.qml`, `Enfield.qml`,
+`Clockwork.qml`. See `docs/theming.md` for the authoring contract, the
+context object, and the topic-preference semantics that let a theme bias
+which of your configured clips play (Enfield prefers mountains).
+
 Only clips that fully downloaded play: a remote clip needs its `.mp4`
 present and non-empty plus its sibling `.mp4.done` marker — a partial or
 interrupted download is skipped, never played.
