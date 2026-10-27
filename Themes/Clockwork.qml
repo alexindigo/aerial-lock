@@ -294,11 +294,11 @@ FocusScope {
         anchors.topMargin: 50 * root.s
         spacing: 25 * root.s
 
-        CwAction { label: "Session"; notice: "Session selection is not implemented yet" }
+        CwAction { objectName: "sessionAction"; label: "Session"; notice: "Session selection is not implemented yet" }
         Rectangle { width: 1 * root.s; height: 10 * root.s; color: root.pillBorder; anchors.verticalCenter: parent.verticalCenter }
-        CwAction { label: "Reboot"; notice: "Reboot is not implemented yet" }
+        CwAction { objectName: "rebootAction"; label: "Reboot"; notice: "Reboot is not implemented yet" }
         Rectangle { width: 1 * root.s; height: 10 * root.s; color: root.pillBorder; anchors.verticalCenter: parent.verticalCenter }
-        CwAction { label: "Shutdown"; notice: "Shut down is not implemented yet" }
+        CwAction { objectName: "shutdownAction"; label: "Shutdown"; notice: "Shut down is not implemented yet" }
     }
 
     // Hover notice for unavailable controls; never interactive.
@@ -333,6 +333,7 @@ FocusScope {
 
         // Username (selector unavailable).
         Item {
+            objectName: "userSelector"
             width: parent.width
             height: 32 * root.s
             opacity: 0.7

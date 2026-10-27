@@ -217,11 +217,32 @@ Item {
 
         function disabledHonesty(name) {
             var r = region(name)
+            compare(r.obj.Accessible.role, Accessible.Button, name + " has a button role")
             verify(r.obj.opacity < 1, name + " must be visibly unavailable (dimmed)")
             verify(r.obj.visible, name + " must remain visible")
             var acc = r.obj.Accessible ? r.obj.Accessible.name : ""
             verify(acc.indexOf("unavailable") !== -1 || acc.indexOf("not yet implemented") !== -1,
                    name + " must carry an honest unavailable description")
+        }
+
+        function test_unavailable_controls_data() {
+            return [
+                {tag: "Macintosh", filename: "Macintosh.qml", controls: []},
+                {tag: "Windows7", filename: "Windows7.qml",
+                 controls: ["switchUser", "sessionPill", "restartAction", "shutdownAction"]},
+                {tag: "MaterialYou", filename: "MaterialYou.qml",
+                 controls: ["userPill", "powerTile", "sessionTile", "rebootTile", "sleepTile"]},
+                {tag: "Enfield", filename: "Enfield.qml",
+                 controls: ["userName", "sessionAffordance", "restartAction", "shutdownAction"]},
+                {tag: "Clockwork", filename: "Clockwork.qml",
+                 controls: ["userSelector", "sessionAction", "rebootAction", "shutdownAction"]}
+            ]
+        }
+
+        function test_unavailable_controls(data) {
+            load(data.filename)
+            for (var i = 0; i < data.controls.length; i++)
+                disabledHonesty(data.controls[i])
         }
 
         // ---- Windows7 ----

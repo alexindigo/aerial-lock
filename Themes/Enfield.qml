@@ -470,11 +470,12 @@ FocusScope {
             spacing: 30 * root.s
             Repeater {
                 model: [
-                    { label: "Restart", notice: "Restart is not implemented yet" },
-                    { label: "Shut Down", notice: "Shut down is not implemented yet" }
+                    { name: "restartAction", label: "Restart", notice: "Restart is not implemented yet" },
+                    { name: "shutdownAction", label: "Shut Down", notice: "Shut down is not implemented yet" }
                 ]
                 delegate: Text {
                     required property var modelData
+                    objectName: modelData.name
                     text: modelData.label
                     color: "white"
                     // Unavailable: statically dimmed, never brightening into

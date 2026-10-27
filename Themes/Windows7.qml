@@ -417,6 +417,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
             }
             Item {
+                objectName: "sessionPill"
                 width: sessionPillText.implicitWidth + 24
                 height: 24 * root.s
                 anchors.verticalCenter: parent.verticalCenter
@@ -453,6 +454,8 @@ FocusScope {
                     onEntered: root.hoverNotice = "Session selection is not implemented yet"
                     onExited: root.hoverNotice = ""
                 }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Session (unavailable: system actions are not yet implemented)"
             }
         }
 
@@ -502,8 +505,8 @@ FocusScope {
             height: 52 * root.s
             spacing: 8 * root.s
 
-            Win7GlassButton { label: "Restart"; notice: "Restart is not implemented yet"; anchors.verticalCenter: parent.verticalCenter }
-            Win7GlassButton { label: "Shut down"; notice: "Shut down is not implemented yet"; anchors.verticalCenter: parent.verticalCenter }
+            Win7GlassButton { objectName: "restartAction"; label: "Restart"; notice: "Restart is not implemented yet"; anchors.verticalCenter: parent.verticalCenter }
+            Win7GlassButton { objectName: "shutdownAction"; label: "Shut down"; notice: "Shut down is not implemented yet"; anchors.verticalCenter: parent.verticalCenter }
         }
 
         states: State {
