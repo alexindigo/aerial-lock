@@ -1,3 +1,7 @@
 Lock Lock.qml
 LockContent LockContent.qml
 LockBackground LockBackground.qml
+ThemeHost ThemeHost.qml
+AuthField AuthField.qml
+Avatar Avatar.qml
+FrostedText FrostedText.qml

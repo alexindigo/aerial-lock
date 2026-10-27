@@ -6,6 +6,14 @@ import "Services" as Services
 ShellRoot {
     id: root
 
+    // d40: never reload away an entered response. Quickshell's default
+    // engine reload watches every QML dependency; a theme/config edit
+    // mid-lock would tear down the surface and discard partial input.
+    // Themes load once per lock (ThemeHost); explicit reload is not a
+    // supported in-lock operation. (QuickshellSettings.watchFiles —
+    // src/core/qmlglobal.hpp, default true.)
+    settings.watchFiles: false
+
     Binding {
         target: Services.Logger
         property: "verbose"

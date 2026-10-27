@@ -15,7 +15,12 @@ Scope {
     property bool locked: true
     property bool unlockHandled: false
 
-    property string pendingPassword: ""
+    // d43: the response accepted from the shared draft, queued for PAM's
+    // first prompt. null = no queued response (distinct from an empty
+    // answer: an empty initial submit starts PAM without queueing, while
+    // an empty answer to an already-active prompt is submitted). Cleared
+    // before pam.respond, and on failure, abort and teardown.
+    property var acceptedResponse: null
     property bool unlockInProgress: false
     property bool attemptCancelled: false
     property string statusMessage: ""
@@ -35,15 +40,18 @@ Scope {
     readonly property var i18n: config.i18n
 
     property string panelScreenName: ""
+    property bool themeFallbackPinned: false
+    property bool themeTopicsSet: false
 
-    // Video background resolution (d36): config sources[] in list order —
-    // file → that clip, folder → that directory, apple/community → its
-    // cache when fetched. Nothing configured = solid backgroundColor.
-    // LockBackground.qml is the only MpvQml importer and is only loaded
-    // when the list is non-empty — so libmpv is never started with nothing
-    // to play. qt6-mpvqml itself is a hard dependency (README).
-    readonly property var bgItems: sourceCache.items
-    readonly property bool hasBackground: bgItems.length > 0
+    // Video background resolution (d36/d40): SourceCache publishes ONE
+    // frozen playlist per lock after its nonblocking inventory resolves
+    // (theme topics applied, 2000 ms deadline). Solid background while it
+    // resolves; authentication never waits on it. LockBackground.qml is
+    // the only MpvQml importer and only activates with a nonempty list —
+    // libmpv never starts for nothing. qt6-mpvqml itself is a hard
+    // dependency (README).
+    readonly property var bgItems: sourceCache.playlist
+    readonly property bool hasBackground: sourceCache.resolved && bgItems.length > 0
 
     SourceCache {
         id: sourceCache
@@ -70,10 +78,48 @@ Scope {
     Binding { target: lockContext.auth; property: "status"; value: root.statusMessage }
     Binding { target: lockContext.auth; property: "inProgress"; value: root.unlockInProgress }
     Binding { target: lockContext.auth; property: "isError"; value: root.authIsError }
-    Binding { target: lockContext.auth; property: "responseVisible"; value: pam.responseVisible }
+    // PAM retains the previous echo mode after completion/abort. It is
+    // meaningful only for a response requested by the active conversation.
+    Binding { target: lockContext.auth; property: "responseVisible"; value: pam.active && pam.responseRequired && pam.responseVisible }
     Binding { target: lockContext.auth; property: "maxResponseSize"; value: config.pamLimits.maxResponseSize }
+    Binding { target: lockContext.auth; property: "dismissAvailable"; value: config.buildFlags.debugAllowDismiss }
 
     Binding { target: lockContext.session; property: "outputName"; value: root.panelScreenName }
+    Binding { target: lockContext.session; property: "loginName"; value: pam.user }
+    Binding { target: lockContext.session; property: "avatarPath"; value: {
+            var home = Quickshell.env("HOME")
+            return home && home.length > 0 ? home + "/.face" : ""
+        } }
+
+    // d40 presentation projections: the panel and themes read metrics,
+    // colors and labels from the context alone — neither ConfigStore nor
+    // Logger crosses into theme code. Labels carry the shipped English
+    // fallback so a theme never renders an empty prompt.
+    Binding { target: lockContext.panel; property: "widthMax"; value: config.data.panel.widthMax }
+    Binding { target: lockContext.panel; property: "fieldHeight"; value: config.data.panel.fieldHeight }
+    Binding { target: lockContext.panel; property: "radius"; value: config.data.panel.radius }
+    Binding { target: lockContext.panel; property: "fieldRadius"; value: config.data.panel.fieldRadius }
+    Binding { target: lockContext.panel; property: "outerMargin"; value: config.data.panel.outerMargin }
+    Binding { target: lockContext.panel; property: "spacing"; value: config.data.panel.spacing }
+    Binding { target: lockContext.panel; property: "fontSize"; value: config.data.panel.fontSize }
+
+    Binding { target: lockContext.colors; property: "text"; value: config.data.colors.text }
+    Binding { target: lockContext.colors; property: "textError"; value: config.data.colors.textError }
+    Binding { target: lockContext.colors; property: "input"; value: config.data.colors.input }
+    Binding { target: lockContext.colors; property: "panelFill"; value: config.data.colors.panelFill }
+    Binding { target: lockContext.colors; property: "panelBorder"; value: config.data.colors.panelBorder }
+    Binding { target: lockContext.colors; property: "fieldFill"; value: config.data.colors.fieldFill }
+    Binding { target: lockContext.colors; property: "fieldBorderFocused"; value: config.data.colors.fieldBorderFocused }
+    Binding { target: lockContext.colors; property: "fieldBorder"; value: config.data.colors.fieldBorder }
+
+    Binding { target: lockContext.labels; property: "prompt"; value: i18n.prompt || "Enter password" }
+    Binding { target: lockContext.labels; property: "authenticating"; value: i18n.authenticating || "Authenticating..." }
+    Binding { target: lockContext.labels; property: "authFailed"; value: i18n.authFailed || "Authentication failed" }
+    Binding { target: lockContext.labels; property: "maxTries"; value: i18n.maxTries || "Too many attempts" }
+    Binding { target: lockContext.labels; property: "authError"; value: i18n.authError || "Authentication error" }
+    Binding { target: lockContext.labels; property: "timedOut"; value: i18n.timedOut || "Authentication timed out — try again" }
+    Binding { target: lockContext.labels; property: "dismissDebug"; value: i18n.dismissDebug || "Dismiss (debug)" }
+    Binding { target: lockContext.labels; property: "unlocked"; value: i18n.unlocked || "Unlocked" }
 
     Connections {
         target: lockContext.video
@@ -292,7 +338,43 @@ Scope {
             Binding { target: lockContext.video; property: "path"; value: bgLoader.item ? bgLoader.item.currentFilename : "" }
             // qmllint enable missing-property
 
-            LockContent {
+            // Coverage confirmation starts optional theme work; window
+            // activation remains the separate keyboard-focus backstop.
+            Connections {
+                target: sessionLock
+                function onSecureStateChanged() {
+                    if (sessionLock.secure && lockSurface.hostsPanel) {
+                        themeHost.focusInput()
+                        lockSurface.publishThemeTopics()
+                    }
+                }
+            }
+
+            // d40: the theme's topic preference is known once its content
+            // is loaded (fallback panel: none). Start the inventory then —
+            // its snapshot is frozen per lock and gates the background.
+            function publishThemeTopics() {
+                if (!sessionLock.secure || !lockSurface.hostsPanel || !themeHost.settled || root.themeTopicsSet)
+                    return
+                root.themeTopicsSet = true
+                sourceCache.topics = themeHost.preferredTopics
+                sourceCache.begin()
+            }
+
+            onHostsPanelChanged: publishThemeTopics()
+
+            Connections {
+                target: themeHost
+                function onReady() {
+                    lockSurface.publishThemeTopics()
+                }
+            }
+
+            // d40: the configured whole-surface theme (or the built-in
+            // panel as ThemeHost's fallback) lives INSIDE the trusted
+            // surface — untrusted QML is never the surface component.
+            ThemeHost {
+                id: themeHost
                 anchors.fill: parent
                 visible: lockSurface.hostsPanel
                 enabled: lockSurface.hostsPanel
@@ -300,7 +382,16 @@ Scope {
                 context: lockContext
                 config: root.config
                 logger: root.logger
+                allowLoading: sessionLock.secure && root.locked && lockSurface.hostsPanel
+                fallbackPinned: root.themeFallbackPinned
+                onFallbackRequested: root.themeFallbackPinned = true
             }
+
+            // Scenery-only backdrop export for themes that declare a
+            // `backdrop` property. bgLoader's id is visible only in this
+            // surface subtree, so the binding lives here. Null when the
+            // video background is inactive — themes must tolerate that.
+            Binding { target: themeHost; property: "backdrop"; value: bgLoader.item }
         }
     }
 
@@ -318,13 +409,13 @@ Scope {
             watchdog.restart()
             if (responseRequired) {
                 // PAM is asking for input.
-                if (pendingPassword !== "") {
-                    // Phase 1: the just-submitted password answers this
+                if (acceptedResponse !== null) {
+                    // Phase 1: the just-submitted response answers this
                     // prompt. Clear before respond so the property holds a
                     // value only across the async gap.
-                    var pw = pendingPassword
-                    pendingPassword = ""
-                    pam.respond(pw)
+                    var response = acceptedResponse.text
+                    acceptedResponse = null
+                    pam.respond(response)
                     unlockInProgress = true
                     authState = authAuthenticating
                     statusMessage = i18n.authenticating || "Authenticating..."
@@ -365,7 +456,7 @@ Scope {
                 root.locked = false
             } else {
                 unlockInProgress = false
-                pendingPassword = ""
+                acceptedResponse = null
                 if (result === PamResult.MaxTries) {
                     authState = authMaxTries
                     statusMessage = i18n.maxTries || "Too many attempts"
@@ -383,7 +474,7 @@ Scope {
                 return
             }
             unlockInProgress = false
-            pendingPassword = ""
+            acceptedResponse = null
             authState = authError
             statusMessage = i18n.authError || "Authentication error"
         }
@@ -404,7 +495,7 @@ Scope {
             root.attemptCancelled = true
             pam.abort()
             unlockInProgress = false
-            pendingPassword = ""
+            acceptedResponse = null
             authState = authError
             statusMessage = i18n.timedOut || "Authentication timed out — try again"
         }
@@ -438,20 +529,21 @@ Scope {
         }
     }
 
-    function tryUnlock(password) {
+    function tryUnlock() {
         logger.d("Lock", "tryUnlock: unlockInProgress=" + unlockInProgress +
             " pam.responseRequired=" + pam.responseRequired)
-        if (unlockInProgress && pendingPassword === "") {
+        if (unlockInProgress) {
             return
         }
 
-        pendingPassword = password
+        // Snapshot and consume the shared draft exactly once; the consume
+        // invalidates stale view publications (all mirrors clear).
+        var draft = lockContext.auth.input.consume()
 
         if (pam.responseRequired) {
             logger.d("Lock", "tryUnlock: calling pam.respond")
-            var response = pendingPassword
-            pendingPassword = ""
-            pam.respond(response)
+            acceptedResponse = null
+            pam.respond(draft)
             unlockInProgress = true
             authState = authAuthenticating
             statusMessage = i18n.authenticating || "Authenticating..."
@@ -460,13 +552,19 @@ Scope {
             logger.d("Lock", "tryUnlock: calling pam.start")
             watchdog.restart()
             attemptCancelled = false
+            // Reserve the response before the asynchronous first PAM prompt.
+            unlockInProgress = true
             if (!pam.start()) {
                 watchdog.stop()
-                pendingPassword = ""
+                acceptedResponse = null
+                unlockInProgress = false
                 authState = authError
                 statusMessage = i18n.authError || "Authentication error"
                 logger.w("aerial-lock", "pam.start() failed for service " + pam.config)
             } else {
+                // An empty initial submit starts PAM and exposes its prompt
+                // WITHOUT queueing an empty first answer.
+                acceptedResponse = draft.length > 0 ? ({ "text": draft }) : null
                 authState = authAuthenticating
             }
         }

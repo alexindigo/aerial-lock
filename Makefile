@@ -83,6 +83,12 @@ install: all
 	install -m 644 Modules/Lock/Lock.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/LockContent.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/LockBackground.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/ThemeHost.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/AuthField.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/Avatar.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/FrostedText.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -d $(DESTDIR)$(DATADIR)/Themes
+	install -m 644 Themes/Macintosh.qml $(DESTDIR)$(DATADIR)/Themes/
 	install -m 644 Services/qmldir $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/Logger.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/ConfigStore.qml $(DESTDIR)$(DATADIR)/Services/
@@ -91,7 +97,9 @@ install: all
 	install -m 644 Services/BuildFlags.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/Compositor.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/SourceCache.qml $(DESTDIR)$(DATADIR)/Services/
+	install -m 644 Services/ThemeSelection.js $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/LockContext.qml $(DESTDIR)$(DATADIR)/Services/
+	install -m 644 Services/AuthInputState.qml $(DESTDIR)$(DATADIR)/Services/
 	install -d $(DESTDIR)$(DATADIR)/Services/Compositor
 	install -m 644 Services/Compositor/NiriBackend.qml $(DESTDIR)$(DATADIR)/Services/Compositor/
 	install -m 644 Services/Compositor/HyprlandBackend.qml $(DESTDIR)$(DATADIR)/Services/Compositor/

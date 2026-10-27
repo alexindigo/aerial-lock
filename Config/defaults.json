@@ -1,6 +1,7 @@
 {
   "language": "en",
   "backgroundColor": "#000000",
+  "theme": "Macintosh.qml",
   "sources": [],
   "pamService": "aerial-lock",
   "fallbackQuitMs": 3000,

@@ -1,37 +1,29 @@
 import QtQuick
 import "../../Services"
 
-FocusScope {
+// LockContent — the built-in baseline panel and the trusted ThemeHost
+// fallback. Reads the one context object (the same contract a theme gets)
+// — no ConfigStore, no Logger, no PAM knowledge (d38/d40).
+//
+// Plain Item root, NOT a FocusScope: with a scope here the window's
+// focus delegation stopped at the panel instead of reaching the field
+// (d40 flake — focusItem was LockContent, field never focused).
+//
+// d43: the shared AuthField core draws nothing; this panel owns the
+// field's frame (fill/border/radius/height/padding) around it.
+Item {
     id: root
 
-    // d38: the panel reads the one context object (the same contract a
-    // theme would get) — no PAM knowledge here. config stays for panel
-    // metrics/colors/i18n; logger for debug chatter.
     required property LockContext context
-    required property ConfigStore config
-    required property Logger logger
 
-    readonly property var configData: config.data
-    readonly property var i18n: config.i18n
-    readonly property var panel: configData.panel
-    readonly property var colors: configData.colors
-
-    Component.onCompleted: {
-        logger.d("LockContent", "Component.onCompleted")
-        passwordField.forceActiveFocus()
-    }
-
-    // Re-arm focus whenever the field becomes usable again: a fresh PAM
-    // prompt, a failed attempt, or a watchdog abort all land here.
-    Connections {
-        target: root.context.auth
-        function onInProgressChanged() {
-            if (!root.context.auth.inProgress)
-                passwordField.forceActiveFocus()
-        }
-    }
+    readonly property var panel: context.panel
+    readonly property var colors: context.colors
+    readonly property var labels: context.labels
 
     focus: true
+
+    // ThemeHost.focusInput() backstop target: aim at the field.
+    function focusInput() { authField.focusField() }
 
     Rectangle {
         id: panelRect
@@ -55,6 +47,8 @@ FocusScope {
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                wrapMode: Text.Wrap
                 text: root.context.auth.status
                 color: root.context.auth.isError
                     ? colors.textError
@@ -63,8 +57,8 @@ FocusScope {
                 horizontalAlignment: Text.AlignHCenter
             }
 
+            // The fallback's own field decoration around the shared core.
             Rectangle {
-                id: fieldBorder
                 anchors {
                     left: parent.left
                     right: parent.right
@@ -73,35 +67,18 @@ FocusScope {
                 radius: panel.fieldRadius
                 color: colors.fieldFill
                 border.width: 1
-                border.color: passwordField.activeFocus
+                border.color: authField.hasActiveFocus
                     ? colors.fieldBorderFocused
                     : colors.fieldBorder
 
-                TextInput {
-                    id: passwordField
+                AuthField {
+                    id: authField
                     anchors {
                         fill: parent
-                        margins: 12
+                        leftMargin: 12
+                        rightMargin: 12
                     }
-                    verticalAlignment: TextInput.AlignVCenter
-                    color: colors.input
-                    font.pixelSize: panel.fontSize
-                    echoMode: root.context.auth.responseVisible ? TextInput.Normal : TextInput.Password
-                    passwordMaskDelay: 0
-                    enabled: !root.context.auth.inProgress
-                    focus: true
-                    // PAM_MAX_RESP_SIZE counts the NUL terminator, hence -1.
-                    // 0 means the real limit is unknown: cap at SHRT_MAX, the
-                    // widget's own ceiling — never at a guessed PAM value.
-                    maximumLength: root.context.auth.maxResponseSize > 0 ? root.context.auth.maxResponseSize - 1 : 32767
-
-                    Keys.onPressed: function (event) {
-                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            root.context.auth.submit(text)
-                            text = ""
-                            event.accepted = true
-                        }
-                    }
+                    context: root.context
                 }
             }
 
@@ -115,24 +92,20 @@ FocusScope {
                 color: Qt.rgba(1, 0.31, 0.31, 0.15)
                 border.width: 1
                 border.color: Qt.rgba(1, 0.31, 0.31, 0.3)
-                visible: config.buildFlags.debugAllowDismiss
+                visible: root.context.auth.dismissAvailable
 
                 Text {
                     anchors.centerIn: parent
-                    text: i18n.dismissDebug || "Dismiss (debug)"
+                    text: labels.dismissDebug
                     color: colors.textError
                     font.pixelSize: panel.fontSize
                 }
 
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: {
-                        logger.d("LockContent", "dismiss button clicked")
-                        root.context.auth.dismiss()
-                    }
+                    onClicked: root.context.auth.dismiss()
                 }
             }
         }
     }
-
 }

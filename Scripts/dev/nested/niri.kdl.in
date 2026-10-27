@@ -7,6 +7,13 @@
 
 spawn-at-startup "@TERMINAL@"
 
+// Automated sandbox: the first-run hotkeys overlay is compositor chrome
+// that sits above regular windows and pollutes grim captures of non-lock
+// test apps. The lock itself renders above it regardless.
+hotkey-overlay {
+    skip-at-startup
+}
+
 binds {
     // Launch the locker from this repo.
     Mod+L { spawn "qs" "-p" "@REPO_ROOT@"; }

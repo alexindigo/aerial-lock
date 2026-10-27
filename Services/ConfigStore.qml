@@ -35,6 +35,7 @@ Scope {
     readonly property var schema: ({
         language: "string",
         backgroundColor: "string",
+        theme: "string",
         sources: "array",
         pamService: "string",
         fallbackQuitMs: "number",
