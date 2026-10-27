@@ -91,6 +91,24 @@ install: all
 	install -m 644 Modules/Lock/FrostedText.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -d $(DESTDIR)$(DATADIR)/Themes
 	install -m 644 Themes/Macintosh.qml $(DESTDIR)$(DATADIR)/Themes/
+	install -m 644 Themes/Windows7.qml $(DESTDIR)$(DATADIR)/Themes/
+	install -m 644 Themes/MaterialYou.qml $(DESTDIR)$(DATADIR)/Themes/
+	install -m 644 Themes/Enfield.qml $(DESTDIR)$(DATADIR)/Themes/
+	install -m 644 Themes/Clockwork.qml $(DESTDIR)$(DATADIR)/Themes/
+	# d44 font bundles + attribution/notices (OFL 1.1; see Themes/ATTRIBUTION.md)
+	install -m 644 Themes/ATTRIBUTION.md $(DESTDIR)$(DATADIR)/Themes/
+	install -d $(DESTDIR)$(DATADIR)/Themes/fonts/google-sans
+	install -m 644 "Themes/fonts/google-sans/GoogleSans-VariableFont_GRAD,opsz,wght.ttf" $(DESTDIR)$(DATADIR)/Themes/fonts/google-sans/
+	install -m 644 Themes/fonts/google-sans/OFL.txt $(DESTDIR)$(DATADIR)/Themes/fonts/google-sans/
+	install -m 644 Themes/fonts/google-sans/NOTICE $(DESTDIR)$(DATADIR)/Themes/fonts/google-sans/
+	install -d $(DESTDIR)$(DATADIR)/Themes/fonts/orbitron
+	install -m 644 Themes/fonts/orbitron/Orbitron-VariableFont_wght.ttf $(DESTDIR)$(DATADIR)/Themes/fonts/orbitron/
+	install -m 644 Themes/fonts/orbitron/OFL.txt $(DESTDIR)$(DATADIR)/Themes/fonts/orbitron/
+	install -m 644 Themes/fonts/orbitron/NOTICE $(DESTDIR)$(DATADIR)/Themes/fonts/orbitron/
+	install -d $(DESTDIR)$(DATADIR)/Themes/fonts/outfit
+	install -m 644 Themes/fonts/outfit/Outfit-Black.ttf $(DESTDIR)$(DATADIR)/Themes/fonts/outfit/
+	install -m 644 Themes/fonts/outfit/OFL.txt $(DESTDIR)$(DATADIR)/Themes/fonts/outfit/
+	install -m 644 Themes/fonts/outfit/NOTICE $(DESTDIR)$(DATADIR)/Themes/fonts/outfit/
 	install -m 644 Services/qmldir $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/Logger.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/ConfigStore.qml $(DESTDIR)$(DATADIR)/Services/
