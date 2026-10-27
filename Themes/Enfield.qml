@@ -199,6 +199,7 @@ FocusScope {
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(360 * root.s, root.width - 80 * root.s)
         spacing: 0
+        transform: Translate { id: shakeShift }
 
         Text {
             id: userNameText
@@ -506,10 +507,10 @@ FocusScope {
     }
     SequentialAnimation {
         id: shakeAnim
-        NumberAnimation { target: loginPanel; property: "anchors.horizontalCenterOffset"; to: 10 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.horizontalCenterOffset"; to: -9 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.horizontalCenterOffset"; to: 7 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.horizontalCenterOffset"; to: -5 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.horizontalCenterOffset"; to: 0; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "x"; from: 0; to: 10 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "x"; to: -9 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "x"; to: 7 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "x"; to: -5 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "x"; to: 0; duration: 50 }
     }
 }

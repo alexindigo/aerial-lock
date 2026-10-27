@@ -329,6 +329,8 @@ FocusScope {
         width: Math.min(350 * root.s, root.width - 40 * root.s)
         spacing: 8 * root.s
 
+        transform: Translate { id: shakeShift }
+
         // Username (selector unavailable).
         Item {
             width: parent.width
@@ -475,7 +477,7 @@ FocusScope {
         }
     }
 
-    // Nonblocking failure feedback: shake on the right margin, returning.
+    // Presentation-only failure motion, independent of the active anchors.
     Connections {
         target: root.context.auth
         function onIsErrorChanged() {
@@ -485,9 +487,9 @@ FocusScope {
     }
     SequentialAnimation {
         id: shake
-        NumberAnimation { target: loginPanel; property: "anchors.rightMargin"; from: root.marginR; to: root.marginR + 10 * root.s; duration: 50; easing.type: Easing.InOutSine }
-        NumberAnimation { target: loginPanel; property: "anchors.rightMargin"; to: root.marginR - 10 * root.s; duration: 50; easing.type: Easing.InOutSine }
-        NumberAnimation { target: loginPanel; property: "anchors.rightMargin"; to: root.marginR; duration: 50; easing.type: Easing.InOutSine }
+        NumberAnimation { target: shakeShift; property: "x"; from: 0; to: -10 * root.s; duration: 50; easing.type: Easing.InOutSine }
+        NumberAnimation { target: shakeShift; property: "x"; to: 10 * root.s; duration: 50; easing.type: Easing.InOutSine }
+        NumberAnimation { target: shakeShift; property: "x"; to: 0; duration: 50; easing.type: Easing.InOutSine }
     }
 
     // One 60-tick numbered scale. Shared by the soft (blurred, dim) and

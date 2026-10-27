@@ -26,6 +26,45 @@ Item {
         property var ctx: null
         property var theme: null
 
+        readonly property var bundledThemes: ["Macintosh.qml", "Windows7.qml", "MaterialYou.qml",
+                                              "Enfield.qml", "Clockwork.qml"]
+
+        function test_failure_motion_data() {
+            var rows = []
+            for (var i = 0; i < bundledThemes.length; i++) {
+                for (var narrow = 0; narrow < 2; narrow++)
+                    rows.push({tag: bundledThemes[i] + (narrow ? "-narrow" : "-wide"),
+                               filename: bundledThemes[i], w: narrow ? 492 : 1280})
+            }
+            return rows
+        }
+
+        function test_failure_motion(data) {
+            load(data.filename, data.w, 768)
+            wait(100) // allow asynchronous bundled fonts and positioners to settle
+            var cores = []
+            collectCores(theme, cores)
+            compare(cores.length, 1)
+            var panel = cores[0]
+            var vertical = data.filename === "Windows7.qml"
+            function position() {
+                var p = panel.mapToItem(theme, 0, 0)
+                return vertical ? p.y : p.x
+            }
+            var rest = position()
+            ctx.auth.isError = true
+            var excursion = 0
+            for (var i = 0; i < 22; i++) {
+                wait(16)
+                excursion = Math.max(excursion, Math.abs(position() - rest))
+            }
+            if (data.filename === "Macintosh.qml")
+                close(excursion, 0, "Macintosh has no failure motion")
+            else
+                verify(excursion > 1, data.filename + ": failure moves the mapped field in either layout")
+            close(position(), rest, "failure motion returns to its resting position")
+        }
+
         function init() {
             ctx = createTemporaryObject(contextComponent, root)
             ctx.session.loginName = "tester"

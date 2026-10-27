@@ -63,6 +63,7 @@ FocusScope {
         anchors.centerIn: parent
         anchors.verticalCenterOffset: -10 * root.s
         spacing: 0
+        transform: Translate { id: shakeShift }
 
         // Rounded-square glass avatar frame (reference: 132s, radius 18s).
         Item {
@@ -516,8 +517,8 @@ FocusScope {
         }
     }
 
-    // Nonblocking failure motion: the reference's shake on the column's
-    // vertical offset; it always returns to the −10s resting position.
+    // Reference vertical shake, independent of layout anchors; the column
+    // keeps its −10s resting position throughout.
     Connections {
         target: root.context.auth
         function onIsErrorChanged() {
@@ -527,11 +528,11 @@ FocusScope {
     }
     SequentialAnimation {
         id: shakeAnim
-        NumberAnimation { target: loginPanel; property: "anchors.verticalCenterOffset"; to: -20 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.verticalCenterOffset"; to: 0; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.verticalCenterOffset"; to: -15 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.verticalCenterOffset"; to: -5 * root.s; duration: 50 }
-        NumberAnimation { target: loginPanel; property: "anchors.verticalCenterOffset"; to: -10 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "y"; from: 0; to: -10 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "y"; to: 10 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "y"; to: -5 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "y"; to: 5 * root.s; duration: 50 }
+        NumberAnimation { target: shakeShift; property: "y"; to: 0; duration: 50 }
     }
 
     // Reference-style glass button, used only for the unavailable footer
