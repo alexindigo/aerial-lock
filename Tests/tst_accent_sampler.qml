@@ -83,5 +83,77 @@ Item {
             compare(sensing.shotUrl, "")
             compare(sensing.attempt, 0)
         }
+
+        function cacheFrame() {
+            var frame = Qt.resolvedUrl("fixtures/accent-frame.svg").toString()
+            canvas.loadImage(frame)
+            tryVerify(function () { return canvas.isImageLoaded(frame) }, 1000)
+            return frame
+        }
+
+        function test_late_video_starts_once_after_settling() {
+            player.hasVideo = false
+            var frame = cacheFrame()
+            wait(1700)
+            compare(player.commands, 0, "the first settle has no decoded video")
+            compare(sensing.attempt, 0)
+            player.hasVideo = true
+            wait(1000)
+            compare(player.commands, 0, "newly available video must still settle")
+            tryCompare(player, "commands", 1, 1000)
+            compare(sensing.attempt, 1)
+            // Supply the frame from the cache instead of a real screenshot
+            // file so the ordinary load/poll/paint path can complete.
+            sensing.shotUrl = frame
+            wait(1000)
+            compare(player.commands, 1, "one sensing pass after late availability")
+            verify(sampler.accent.a > 0)
+            player.hasVideo = false
+            player.hasVideo = true
+            wait(1700)
+            compare(player.commands, 1, "a sensed track must not be sampled again")
+        }
+
+        function test_availability_does_not_restart_pending_settle() {
+            wait(1000)
+            player.hasVideo = false
+            player.hasVideo = true
+            // The original settle has only 500 ms left. Restarting it on
+            // availability would postpone the shot another full 1500 ms.
+            tryCompare(player, "commands", 1, 1000)
+            compare(sensing.attempt, 1)
+        }
+
+        function test_availability_does_not_restart_inflight_attempt() {
+            var frame = cacheFrame()
+            tryCompare(player, "commands", 1, 2200)
+            sensing.shotUrl = frame
+            var oldUrl = sensing.shotUrl
+            player.hasVideo = false
+            player.hasVideo = true
+            compare(sensing.attempt, 1)
+            compare(sensing.shotUrl, oldUrl)
+            // The existing write/poll must finish on its original schedule.
+            wait(1000)
+            compare(player.commands, 1)
+            compare(sensing.attempt, 1)
+            compare(sensing.shotUrl, oldUrl)
+            verify(sampler.accent.a > 0)
+            wait(1700)
+            compare(player.commands, 1, "availability must not queue another settle")
+        }
+
+        function test_availability_does_not_restart_exhausted_track() {
+            // With no files written, the normal pipeline exhausts its three
+            // attempts; wait until the final write and poll have finished.
+            tryCompare(player, "commands", 3, 4500)
+            wait(1000)
+            compare(sensing.attempt, 3)
+            player.hasVideo = false
+            player.hasVideo = true
+            wait(1700)
+            compare(player.commands, 3)
+            compare(sensing.attempt, 3)
+        }
     }
 }

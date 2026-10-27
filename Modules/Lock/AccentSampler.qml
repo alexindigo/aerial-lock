@@ -16,6 +16,7 @@ Item {
     property var player: null        // MpvPlayer, injected by LockBackground
     property string trackKey: ""     // LockBackground's currentFilename
 
+    readonly property bool videoAvailable: player ? player.hasVideo : false
     readonly property color accent: internal.accent
 
     QtObject {
@@ -52,6 +53,14 @@ Item {
             settleTimer.restart()
     }
 
+    onVideoAvailableChanged: {
+        // Playlist identity can precede decoded video. Resume only a track
+        // whose initial settle ended without ever starting a shot pipeline.
+        if (root.videoAvailable && root.trackKey.length > 0 && internal.attempt === 0
+                && !settleTimer.running && !writeTimer.running && !pollTimer.running)
+            settleTimer.start()
+    }
+
     // Let mpv decode real content before grabbing (a shot at track start
     // can catch a black or stale frame).
     Timer {
@@ -62,7 +71,7 @@ Item {
     }
 
     function tryShot() {
-        if (!root.player || !root.player.hasVideo)
+        if (!root.videoAvailable)
             return
         internal.attempt += 1
         internal.shots += 1
@@ -107,7 +116,7 @@ Item {
         // Must stay in the painted scene (invisible canvases never paint);
         // the full-surface MpvPlayer is declared after the sampler and
         // covers it. Nothing to see while there is no video.
-        visible: root.player ? root.player.hasVideo : false
+        visible: root.videoAvailable
         onPaint: {
             // Visibility-triggered paints can precede the first load.
             if (!isImageLoaded(internal.shotUrl))
