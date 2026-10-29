@@ -24,7 +24,7 @@ set -euo pipefail
 # and D-Bus and clobber WAYLAND_DISPLAY for newly-launched host apps.
 
 usage() {
-    echo "usage: $(basename "$0") [niri|hyprland] [--outputs N]" >&2
+    echo "usage: $(basename -- "$0") [niri|hyprland] [--outputs N]" >&2
     exit 2
 }
 
@@ -39,12 +39,15 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Arithmetic below accepts a count, never an expression supplied by argv.
+[[ "$OUTPUTS" =~ ^[1-9][0-9]*$ ]] || usage
+
 case "$BACKEND" in
     niri|hyprland) ;;
     *) usage ;;
 esac
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TERMINAL=""
 for t in ghostty alacritty kitty; do
@@ -53,7 +56,7 @@ done
 [ -n "$TERMINAL" ] || { echo "nested.sh: no terminal found (install ghostty, alacritty or kitty)" >&2; exit 1; }
 
 RUN_DIR="$(mktemp -d)"
-trap 'rm -rf "$RUN_DIR"' EXIT
+trap 'rm -rf -- "$RUN_DIR"' EXIT
 
 render() {
     sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@TERMINAL@|$TERMINAL|g" "$1" > "$2"

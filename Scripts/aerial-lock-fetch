@@ -89,7 +89,7 @@ CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/aerial-lock/config.json"
 CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/aerial-lock"
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf -- "$TMP"' EXIT
 
 # Pinned Apple Root CA (see header).
 PEM="$TMP/apple-root.pem"
@@ -130,11 +130,11 @@ EOF
 fetch_url() {
     _fu_url="$1"; _fu_dest="$2"; shift 2
     _fu_rc=0
-    curl --fail -sS --location "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
+    curl --fail -sS --location "$@" -o "$_fu_dest" -- "$_fu_url" || _fu_rc=$?
     if [ "$_fu_rc" -eq 60 ]; then
         echo "aerial-lock-fetch: system trust failed for $_fu_url — retrying with pinned Apple Root CA" >&2
         _fu_rc=0
-        curl --fail -sS --location --cacert "$PEM" "$@" -o "$_fu_dest" "$_fu_url" || _fu_rc=$?
+        curl --fail -sS --location --cacert "$PEM" "$@" -o "$_fu_dest" -- "$_fu_url" || _fu_rc=$?
     fi
     return "$_fu_rc"
 }
@@ -285,9 +285,9 @@ install_entries() {
         echo "aerial-lock-fetch: entries.json is not a valid manifest" >&2
         return 1
     }
-    mkdir -p "$2"
-    cp "$1" "$2/entries.json.tmp"
-    mv -f "$2/entries.json.tmp" "$2/entries.json"
+    mkdir -p -- "$2"
+    cp -- "$1" "$2/entries.json.tmp"
+    mv -f -- "$2/entries.json.tmp" "$2/entries.json"
 }
 
 # fetch_one <safe-name> <url> <min> <max> — resolve the manifest body
@@ -333,7 +333,7 @@ fetch_one() {
             fi
             ;;
         entries)
-            cp "$_fo_body" "$TMP/$_fo_name.entries"
+            cp -- "$_fo_body" "$TMP/$_fo_name.entries"
             ;;
         *)
             echo "aerial-lock-fetch: $_fo_name: unrecognized manifest shape" >&2
@@ -396,7 +396,7 @@ PYEOF
         return 1
     fi
 
-    mkdir -p "$_fo_cache/videos"
+    mkdir -p -- "$_fo_cache/videos"
     TAB="$(printf '\t')"
     while IFS="$TAB" read -r id url; do
         [ -n "$id" ] || continue
@@ -407,9 +407,9 @@ PYEOF
         fi
         echo "aerial-lock-fetch: $_fo_name: fetching $id"
         if fetch_url "$url" "$out" -C -; then
-            touch "$out.done"
+            touch -- "$out.done"
         else
-            rm -f "$out.done"
+            rm -f -- "$out.done"
             echo "aerial-lock-fetch: $_fo_name: clip $id failed — continuing" >&2
         fi
     done < "$TMP/$_fo_name.tsv"

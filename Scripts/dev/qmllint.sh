@@ -31,7 +31,7 @@ if [[ ! "$QMLLINT_VERSION" =~ ^qmllint\ [6-9]\. ]]; then
     exit 1
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 IMPORT_OPTS=(-I "$REPO_ROOT" -I /usr/lib/qt6/qml/ -I /usr/lib/qt6/qml/Quickshell/)
 
 # Categories enforced as errors, beyond those qmllint exits non-zero for.
@@ -48,12 +48,22 @@ ENFORCED_CATEGORIES=(
     syntax
 )
 
-# Collect all .qml files or use provided args
-if [ $# -gt 0 ]; then
-    mapfile -t all_files < <(find "$@" -name "*.qml" -type f | sort)
-else
-    mapfile -t all_files < <(find . -name "*.qml" -type f ! -path "./.git/*" | sort)
-fi
+# A find root is a literal pathname, never an option or an expression (even
+# names such as -delete, '(' or '!'). Keep filenames NUL-delimited through
+# collection so whitespace and newlines remain part of their one operand.
+roots=()
+[ $# -gt 0 ] || set -- .
+for root in "$@"; do
+    [[ -e "$root" ]] || { printf 'qmllint: root does not exist: %s\n' "$root" >&2; exit 2; }
+    case "$root" in
+        .|./*|/*) roots+=("$root") ;;
+        *) roots+=("./$root") ;;
+    esac
+done
+file_list=$(mktemp)
+trap 'rm -f -- "$file_list"' EXIT
+find "${roots[@]}" -name '*.qml' -type f ! -path './.git/*' -print0 | sort -z > "$file_list"
+mapfile -d '' -t all_files < "$file_list"
 
 [ ${#all_files[@]} -eq 0 ] && { echo "No QML files found"; exit 0; }
 
