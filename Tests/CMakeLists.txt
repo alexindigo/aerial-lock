@@ -21,6 +21,16 @@ add_test(NAME native-input-migration
 add_executable(connection-loss-probe connection-loss-probe.cpp)
 target_link_libraries(connection-loss-probe PRIVATE Qt6::Core pthread)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# VM integration drivers validate an operator-supplied owned-instance manifest
+# (Tests/README.md "Owned manifest"); its regression runs only when one is given.
+set(AERIAL_LOCK_VM_RECORD "" CACHE FILEPATH "Operator-supplied owned VM/session manifest")
+if(AERIAL_LOCK_VM_RECORD)
+    add_test(NAME owned-instance
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-owned-instance.py"
+                --vm-record "${AERIAL_LOCK_VM_RECORD}")
+endif()
+add_test(NAME panel-output-paths
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-panel-output-paths.py")
 add_test(NAME blocked-latch
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-blocked-latch.py"
             "$<TARGET_FILE:connection-loss-probe>")

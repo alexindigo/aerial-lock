@@ -325,6 +325,8 @@ int main(int argc, char **argv) {
     if (args.size() == 3 && args[1] == "--latch-harness") return latchHarness(args[2]);
     QString root;
     QString shell;
+    QString vmRecord;
+    QString sessionRecord;
     QString fault;
     QByteArray ready("CONNECTION_LOSS_READY");
     int intactMilliseconds = 0;
@@ -332,6 +334,8 @@ int main(int argc, char **argv) {
     bool blocked = false;
     for (int i = 1; i < args.size(); ++i) {
         if (args[i] == "--root" && i + 1 < args.size()) root = args[++i];
+        else if (args[i] == "--vm-record" && i + 1 < args.size()) vmRecord = args[++i];
+        else if (args[i] == "--session-record" && i + 1 < args.size()) sessionRecord = args[++i];
         else if (args[i] == "--shell-dir" && i + 1 < args.size()) shell = args[++i];
         else if (args[i] == "--blocked-gui") blocked = true;
         else if (args[i] == "--fault" && i + 1 < args.size()) fault = args[++i];
@@ -340,7 +344,17 @@ int main(int argc, char **argv) {
         else if (args[i] == "--native-lifecycle") nativeLifecycle = true;
         else return 2;
     }
-    if (root.isEmpty() || shell.isEmpty()) return 2;
+    if (root.isEmpty() || shell.isEmpty() || vmRecord.isEmpty() || sessionRecord.isEmpty()) return 2;
+    QProcess ownership;
+    ownership.start(QStringLiteral("python3"),
+                    {root + "/src/aerial-lock/Tests/owned_instance.py", "--root", root,
+                     "--vm-record", vmRecord, "--session-record", sessionRecord});
+    if (!ownership.waitForFinished(15000) || ownership.exitStatus() != QProcess::NormalExit
+        || ownership.exitCode() != 0
+        || !ownership.readAllStandardOutput().contains("OWNED_VM_SESSION_VALIDATED")) {
+        std::fprintf(stderr, "owned VM/session validation failed before relay/child launch\n");
+        return 2;
+    }
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     const QString original = environment.value(QStringLiteral("WAYLAND_DISPLAY"));
     const QString runtime = environment.value(QStringLiteral("XDG_RUNTIME_DIR"));
