@@ -259,6 +259,20 @@ So themes need neither ConfigStore nor Logger:
 | `context.colors` | `text`, `textError`, `input`, `panelFill`, `panelBorder`, `fieldFill`, `fieldBorderFocused`, `fieldBorder` |
 | `context.labels` | `prompt`, `authenticating`, `authFailed`, `maxTries`, `authError`, `timedOut`, `dismissDebug`, `unlocked` (translated, English fallback) |
 
+## Sampling and output lifetime
+
+The production accent sampler settles a track for 1.5 seconds, then owns one
+completion-driven command → image → paint transaction. It retries at most three
+times and crossfades the resulting color over 600 ms. Canvas decodes within a
+64×40 source-size bound and unloads the captured URL after painting or failure;
+fresh temporary JPEGs retain the existing leftover-file policy. Track changes
+retire interest without freeing an outstanding command's slot. A command deadline
+does not cancel a file write or admit a replacement; real completion or receiver
+retirement releases the slot. Video that appears only after the settle restarts
+the settle once, never an immediate grab; a sensed, in-flight or exhausted track
+is not sampled again when video availability toggles. Scenery failure leaves
+authentication independent.
+
 ## Topic preference
 
 A theme's `preferredTopics` biases which configured clips play: the lock

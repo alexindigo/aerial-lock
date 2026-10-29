@@ -13,6 +13,7 @@ Item {
     // entry replaces, the rest append. Missing files/dirs are skipped by
     // mpv (error + advance), never a crash.
     property var items: []
+    property bool stopped: false
 
     signal loadFailed(string message)
 
@@ -39,15 +40,20 @@ Item {
     }
 
     function shutdown() {
+        if (stopped)
+            return
+        stopped = true
+        sampler.shutdown()
         player.paused = true
         player.stop(false)
     }
+    Component.onDestruction: shutdown()
 
     // Single drive point: the parent assigns items after
     // Component.onCompleted, so loading hangs off the property change,
     // not construction.
     function applySource() {
-        if (items.length === 0)
+        if (stopped || items.length === 0)
             return
         var first = true
         for (var i = 0; i < items.length; i++) {
@@ -68,6 +74,7 @@ Item {
         id: sampler
         player: player
         trackKey: root.currentFilename
+        onSamplingFailed: function (reason) { root.loadFailed(reason) }
     }
 
     MpvPlayer {
