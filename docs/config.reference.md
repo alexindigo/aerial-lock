@@ -256,7 +256,7 @@ dev build prints a startup warning. A user config cannot enable either flag.
 
 Example:
 ```
-AERIAL_LOCK_PAM_SERVICE=login qs -p .
+AERIAL_LOCK_PAM_SERVICE=login bash Scripts/dev/run.sh
 ```
 
 ## Example

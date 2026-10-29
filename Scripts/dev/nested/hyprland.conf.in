@@ -5,7 +5,7 @@
 exec-once = @TERMINAL@
 
 # Launch the locker from this repo.
-bind = SUPER, L, exec, qs -p @REPO_ROOT@
+bind = SUPER, L, exec, bash "@REPO_ROOT@/Scripts/dev/run.sh"
 
 # In-sandbox escape — bindl fires even while the session is locked.
 bindl = SUPERSHIFT, Escape, exit,

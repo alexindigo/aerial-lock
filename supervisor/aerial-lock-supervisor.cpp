@@ -20,6 +20,7 @@
 #include <QDBusConnectionInterface>
 #include <QDir>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QTextStream>
 #include <QTimer>
 
@@ -28,6 +29,16 @@
 #include <string>
 
 #include <wayland-client.h>
+
+#ifndef AERIAL_LOCK_DEFAULT_SHELL
+#define AERIAL_LOCK_DEFAULT_SHELL "/usr/share/aerial-lock"
+#endif
+#ifndef AERIAL_LOCK_DEFAULT_RUNNER
+#define AERIAL_LOCK_DEFAULT_RUNNER "/usr/libexec/aerial-lock/aerial-lock-run"
+#endif
+#ifndef AERIAL_LOCK_DEFAULT_PLUGIN_ROOT
+#define AERIAL_LOCK_DEFAULT_PLUGIN_ROOT "/usr/lib/aerial-lock/qt-plugins"
+#endif
 
 static const int RESPAWN_LIMIT = 3;
 static const int RESPAWN_BACKOFF_MS = 1500;
@@ -60,12 +71,13 @@ private:
         // before and after `make install`.
         const char *shell = getenv("AERIAL_LOCK_SHELL");
         return QString::fromLatin1(shell && *shell ? shell
-                                                  : "/usr/share/aerial-lock");
+                                                   : AERIAL_LOCK_DEFAULT_SHELL);
     }
 
     void launch()
     {
         m_attempt++;
+        m_attemptSettled = false;
         m_video = nextVideo();
 
         // On Hyprland a respawned locker is refused without the
@@ -83,18 +95,28 @@ private:
                 .arg(m_video.isEmpty() ? QString()
                                        : QStringLiteral(" (video: %1)").arg(m_video)));
         m_child = new QProcess(this);
-        m_child->setProgram(QStringLiteral("qs"));
-        QStringList args{QStringLiteral("-p"), m_lockerCommand};
+        const QByteArray runner = qgetenv("AERIAL_LOCK_RUNNER");
+        const QByteArray pluginRoot = qgetenv("AERIAL_LOCK_PLUGIN_ROOT");
+        m_child->setProgram(runner.isEmpty() ? QStringLiteral(AERIAL_LOCK_DEFAULT_RUNNER)
+                                           : QString::fromLocal8Bit(runner));
+        QStringList args{QStringLiteral("--shell-dir"), m_lockerCommand,
+                        QStringLiteral("--plugin-root"), pluginRoot.isEmpty()
+                            ? QStringLiteral(AERIAL_LOCK_DEFAULT_PLUGIN_ROOT) : QString::fromLocal8Bit(pluginRoot)};
         m_child->setArguments(args);
-        if (!m_video.isEmpty()) {
-            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        if (!m_video.isEmpty())
             env.insert(QStringLiteral("AERIAL_LOCK_VIDEO"), m_video);
-            m_child->setProcessEnvironment(env);
-        }
+        m_child->setProcessEnvironment(env);
+        QProcess *const child = m_child;
         connect(m_child, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                this, &Supervisor::onChildFinished);
-        connect(m_child, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
-            log(QStringLiteral("child failed to start: %1").arg(m_child->errorString()));
+                this, [this, child](int code, QProcess::ExitStatus status) {
+            if (child == m_child) onChildFinished(code, status);
+        });
+        connect(m_child, &QProcess::errorOccurred, this, [this, child](QProcess::ProcessError error) {
+            if (child != m_child || m_attemptSettled) return;
+            log(QStringLiteral("child process error: %1").arg(child->errorString()));
+            if (error == QProcess::FailedToStart)
+                onChildFinished(71, QProcess::CrashExit);
         });
         m_child->start();
     }
@@ -123,6 +145,11 @@ private:
 
     void onChildFinished(int exitCode, QProcess::ExitStatus status)
     {
+        if (m_attemptSettled) return;
+        m_attemptSettled = true;
+        QProcess *const completed = m_child;
+        m_child = nullptr;
+        if (completed) completed->deleteLater();
         log(QStringLiteral("child finished: exit=%1 status=%2")
                 .arg(exitCode).arg(status));
 
@@ -222,6 +249,7 @@ private:
     QString m_lastVideo;
     int m_attempt = 0;
     bool m_hyprFlagSet = false;
+    bool m_attemptSettled = false;
 };
 
 int main(int argc, char **argv)

@@ -1,6 +1,8 @@
 PREFIX ?= /usr
 DATADIR ?= $(PREFIX)/share/aerial-lock
 BINDIR ?= $(PREFIX)/bin
+LIBEXECDIR ?= $(PREFIX)/libexec/aerial-lock
+PLUGINROOT ?= $(PREFIX)/lib/aerial-lock/qt-plugins
 PAMDIR ?= /etc/pam.d
 CONFDIR ?= $(DATADIR)/Config
 I18NDIR ?= $(CONFDIR)/i18n
@@ -20,10 +22,12 @@ SESSION_LOCK_XML := $(WAYLAND_PROTOCOLS)/staging/ext-session-lock/ext-session-lo
 OBJDIR ?= build
 UNLOCK_OBJS := $(OBJDIR)/aerial-unlock-proto.o $(OBJDIR)/aerial-unlock-main.o
 SUPERVISOR_OBJS := $(OBJDIR)/aerial-supervisor-proto.o $(OBJDIR)/aerial-supervisor-main.o
+GUARD_OBJS := $(OBJDIR)/connection-guard.o
+GUARD_PLUGIN := native/qt-plugins/generic/libAerialLockConnectionGuard.so
 
 .PHONY: all install uninstall dev clean pam-limits build-flags
 
-all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor
+all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor $(GUARD_PLUGIN)
 
 # Phony on purpose: the value can come from the environment, which Make
 # cannot express as a file prerequisite. The generator is sub-second, so
@@ -86,7 +90,23 @@ $(OBJDIR)/aerial-supervisor-proto.o: supervisor/ext-session-lock-v1-protocol.c
 $(OBJDIR)/aerial-supervisor-main.o: supervisor/aerial-lock-supervisor.cpp supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h
 	@mkdir -p $(@D)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -fPIC -c $< -Isupervisor \
+		-DAERIAL_LOCK_DEFAULT_SHELL='"$(DATADIR)"' \
+		-DAERIAL_LOCK_DEFAULT_RUNNER='"$(LIBEXECDIR)/aerial-lock-run"' \
+		-DAERIAL_LOCK_DEFAULT_PLUGIN_ROOT='"$(PLUGINROOT)"' \
 		$$(pkg-config --cflags Qt6Core Qt6DBus wayland-client) -o $@
+
+native/connection-guard.moc: native/connection-guard.cpp native/connection-guard.json
+	/usr/lib/qt6/moc $$(pkg-config --cflags Qt6Core Qt6Gui wayland-client) $< -o $@
+
+$(OBJDIR)/connection-guard.o: native/connection-guard.cpp native/connection-guard.moc native/connection-guard.json
+	@mkdir -p $(@D)
+	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) -fPIC -pthread -c $< \
+		$$(pkg-config --cflags Qt6Core Qt6Gui wayland-client) -o $@
+
+$(GUARD_PLUGIN): $(GUARD_OBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -shared -pthread -o $@ $(GUARD_OBJS) \
+		$$(pkg-config --libs Qt6Core Qt6Gui wayland-client) -ldl
 
 supervisor/aerial-lock-supervisor: $(SUPERVISOR_OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJDIR)/aerial-supervisor-main.o $(OBJDIR)/aerial-supervisor-proto.o \
@@ -152,6 +172,9 @@ install: all
 	install -m 755 Scripts/aerial-lock-fetch $(DESTDIR)$(BINDIR)/aerial-lock-fetch
 	install -m 755 recovery/aerial-unlock $(DESTDIR)$(BINDIR)/aerial-unlock
 	install -m 755 supervisor/aerial-lock-supervisor $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
+	install -d $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(PLUGINROOT)/generic
+	install -m 755 Scripts/aerial-lock-run $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run
+	install -m 755 $(GUARD_PLUGIN) $(DESTDIR)$(PLUGINROOT)/generic/
 	install -d $(DESTDIR)$(PAMDIR)
 	install -m 644 pam.d/aerial-lock $(DESTDIR)$(PAMDIR)/aerial-lock
 
@@ -161,16 +184,18 @@ uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-fetch
 	rm -f $(DESTDIR)$(BINDIR)/aerial-unlock
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
+	rm -f $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run $(DESTDIR)$(PLUGINROOT)/generic/libAerialLockConnectionGuard.so
 	rm -f $(DESTDIR)$(PAMDIR)/aerial-lock
 
 clean:
 	rm -f gen-pam-limits.tmp Config/pam-limits.json Config/build-flags.json
 	rm -f recovery/aerial-unlock recovery/ext-session-lock-v1-client.h recovery/ext-session-lock-v1-protocol.c
 	rm -f supervisor/aerial-lock-supervisor supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
-	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS)
+	rm -f native/connection-guard.moc $(GUARD_PLUGIN)
+	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS)
 	@rmdir $(OBJDIR) 2>/dev/null || true
 
 dev: DEBUG_DISMISS=1
 dev: DEBUG_VERBOSE=1
 dev: all
-	qs -p .
+	bash Scripts/dev/run.sh

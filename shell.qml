@@ -5,6 +5,17 @@ import "Services" as Services
 
 ShellRoot {
     id: root
+    property int exitCode: 0
+
+    function guardReady() {
+        return Quickshell.env("AERIAL_LOCK_CONNECTION_GUARD_PID") === String(Quickshell.processId)
+    }
+    Component.onCompleted: {
+        if (!root.guardReady()) {
+            root.exitCode = 71
+            deferredQuit.start()
+        }
+    }
 
     // d40: never reload away an entered response. Quickshell's default
     // engine reload watches every QML dependency; a theme/config edit
@@ -72,10 +83,15 @@ ShellRoot {
         id: deferredQuit
         interval: 0
         repeat: false
-        onTriggered: Qt.quit()
+        onTriggered: Qt.exit(root.exitCode)
     }
 
     function maybeLock() {
+        if (!root.guardReady()) {
+            root.exitCode = 71
+            deferredQuit.start()
+            return
+        }
         if (!cfg.ready || !pamProbe.checked) return
         if (!pamProbe.ok) {
             Services.Logger.w("aerial-lock", "refusing to lock — " + pamProbe.reason)

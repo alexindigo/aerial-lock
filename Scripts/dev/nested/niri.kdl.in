@@ -16,11 +16,11 @@ hotkey-overlay {
 
 binds {
     // Launch the locker from this repo.
-    Mod+L { spawn "qs" "-p" "@REPO_ROOT@"; }
+    Mod+L { spawn "bash" "@REPO_ROOT@/Scripts/dev/run.sh"; }
 
-    // Kill switch — spawn is the only bind class niri allows to fire while
-    // locked, so the escape kills the locker (releasing the lock) rather
-    // than quitting the compositor directly.
+    // Kill switch — spawn is the only bind class niri allows while locked.
+    // Killing the locker does not unlock a secure session; close the owned
+    // sandbox compositor separately if authentication cannot finish.
     Mod+Shift+Escape allow-when-locked=true { spawn "pkill" "-f" "qs -p.*aerial-lock"; }
 
     // Quit the nested compositor (when unlocked).

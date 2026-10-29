@@ -39,6 +39,17 @@ make PAM_MAX_RESP_SIZE=1024
 
 ## Usage
 
+The installed supervisor launches the shared guarded runner on every attempt,
+including solid-background/no-video locks. Its private Qt generic plugin watches
+the actual locker Wayland connection independently of GUI/media teardown. A
+confirmed transport loss exits abnormally (70); guard startup/monitor failure
+exits 71. Neither path unlocks. Normal PAM unlock still flushes the unlock request
+and exits 0; the supervisor retains its bounded respawn/no-automatic-unlock policy.
+
+Building the native guard/supervisor requires Qt6 Core/Gui/DBus development files,
+wayland-client and wayland-protocols. `make install` installs both the shared
+runner and private plugin; `PREFIX` and `DESTDIR` select their layout.
+
 Bind a key in your compositor config:
 
 **Niri**
@@ -58,14 +69,15 @@ bind = SUPER, L, exec, aerial-lock
 Run from the repo during development:
 
 ```
-qs -p .
+make DEBUG_DISMISS=0 DEBUG_VERBOSE=0
+bash Scripts/dev/run.sh
 ```
 
 Before `make install` is run, `/etc/pam.d/aerial-lock` won't exist yet.
 Use the env-var override to test with your system's login PAM stack:
 
 ```
-AERIAL_LOCK_PAM_SERVICE=login qs -p .
+AERIAL_LOCK_PAM_SERVICE=login bash Scripts/dev/run.sh
 ```
 
 ### Testing

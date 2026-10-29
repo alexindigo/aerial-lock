@@ -27,6 +27,10 @@ over SSH with `grim`/`wtype`/`ydotool` per the vm-gui-automation skill.
 
 ## Launch
 
+Build the guard first (`make DEBUG_DISMISS=0 DEBUG_VERBOSE=0`); the nested
+templates launch `Scripts/dev/run.sh`, which calls the same guarded runner as
+the installed supervisor. Bare `qs` is not an authorized production-shell launch.
+
 ```sh
 Scripts/dev/nested.sh niri            # nested niri window
 Scripts/dev/nested.sh hyprland --outputs N   # nested Hyprland + N-1 fake outputs
