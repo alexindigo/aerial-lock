@@ -51,6 +51,7 @@ Item {
         property var model: null
 
         function init() {
+            failOnWarning(/.*/)
             ctx = createTemporaryObject(contextComponent, root)
             model = ctx.auth.input
         }
@@ -310,6 +311,11 @@ Item {
         SignalSpy {}
     }
 
+    Component {
+        id: fieldsComponent
+        Item { anchors.fill: parent }
+    }
+
     TestCase {
         id: coreCase
         name: "AuthFieldCore"
@@ -317,6 +323,7 @@ Item {
 
         property var ctx: null
         property var model: null
+        property var fields: null
         property int submitCount: 0
         property int rejectedCount: 0
         property var accepted: []
@@ -338,12 +345,24 @@ Item {
         }
 
         function init() {
+            failOnWarning(/.*/)
             ctx = createTemporaryObject(contextComponent, root)
             model = ctx.auth.input
             submitSpy.target = ctx
+            fields = createTemporaryObject(fieldsComponent, root)
             submitCount = 0
             rejectedCount = 0
             accepted = []
+        }
+
+        function cleanup() {
+            // QtTest destroys temporary objects in creation order. Tear down
+            // all context consumers first, including deferred destruction,
+            // while their shared model and callbacks are still valid.
+            fields.destroy()
+            wait(0)
+            fields = null
+            submitSpy.target = null
         }
 
         function acceptedIs(list) {
@@ -360,7 +379,7 @@ Item {
             if (props)
                 for (var k in props)
                     base[k] = props[k]
-            return createTemporaryObject(comp || fieldComponent, root, base)
+            return createTemporaryObject(comp || fieldComponent, fields, base)
         }
 
         function focused(field) {

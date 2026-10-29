@@ -189,6 +189,8 @@ Item {
             if (theme) {
                 theme.destroy()
                 theme = null
+                // Drain deferred consumer destruction before QtTest removes ctx.
+                wait(0)
             }
         }
 
