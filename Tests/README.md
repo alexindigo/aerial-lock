@@ -75,7 +75,10 @@ recovery only when the manifest also carries a matching
 `connection-loss` runs the guard cases through a byte-preserving relay that
 cuts only the locker's first Wayland connection: blocked-GUI, logger,
 video, retirement and exit-trap cases must exit 70 within 250 ms; arming and
-monitor fault injections must exit 71. All fault hooks live in test-only
+monitor fault injections exit 72 and 71 respectively. The supervisor's
+`supervisor-failures` regression checks pre-engagement, monitor and mixed
+attempt outcomes: exhausted guard failures exit 3, never a false assurance
+that the screen is locked. All fault hooks live in test-only
 preload libraries; the product has no fault or debug-exit setting.
 
 `sampling-scale` checks the original budgets (RSS ≤ 1 GiB, FDs < 75 % of the

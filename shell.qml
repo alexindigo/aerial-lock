@@ -12,7 +12,7 @@ ShellRoot {
     }
     Component.onCompleted: {
         if (!root.guardReady()) {
-            root.exitCode = 71
+            root.exitCode = 72
             deferredQuit.start()
         }
     }
@@ -88,7 +88,7 @@ ShellRoot {
 
     function maybeLock() {
         if (!root.guardReady()) {
-            root.exitCode = 71
+            root.exitCode = 72
             deferredQuit.start()
             return
         }

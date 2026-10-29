@@ -6,12 +6,12 @@ while (($#)); do
     case "$1" in
         --shell-dir) shell_dir=$2; shift 2 ;;
         --plugin-root) plugin_root=$2; shift 2 ;;
-        *) printf 'aerial-lock-run: unknown argument %s\n' "$1" >&2; exit 71 ;;
+        *) printf 'aerial-lock-run: unknown argument %s\n' "$1" >&2; exit 72 ;;
     esac
 done
 if [[ ! -d "$shell_dir" || ! -d "$plugin_root" || ! -f "$plugin_root/generic/libAerialLockConnectionGuard.so" ]]; then
     printf 'aerial-lock-run: shell/plugin paths are unavailable\n' >&2
-    exit 71
+    exit 72
 fi
 unset AERIAL_LOCK_CONNECTION_GUARD_PID QT_WAYLAND_RECONNECT AERIAL_LOCK_RUNTIME_DIR
 # Private per-locker runtime directory for frame grabs (bounded, reused files).

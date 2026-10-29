@@ -8,7 +8,7 @@ ShellRoot {
         running: true
         onTriggered: {
             if (Quickshell.env("AERIAL_LOCK_CONNECTION_GUARD_PID") !== String(Quickshell.processId)) {
-                Qt.exit(71)
+                Qt.exit(72)
                 return
             }
             console.log("CONNECTION_LOSS_READY")

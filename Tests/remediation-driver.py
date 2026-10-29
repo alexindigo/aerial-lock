@@ -615,12 +615,13 @@ class Session:
                 "--fault", fault], self.env, self.output / f"{fault}.log")
             self.locker = probe
             if probe.finish(30) != 0: raise RuntimeError("guard failure did not fail closed: " + fault)
-            probe.wait_line(lambda line: "GUARD_FAILURE_OUTCOME " in line and "exit=71 " in line)
+            expected = 72 if fault == "guard-thread-start" else 71
+            probe.wait_line(lambda line: "GUARD_FAILURE_OUTCOME " in line and f"exit={expected} " in line)
             self.locker = None
         summary = {"cycles": self.args.cycles, "loss_cases": len(outcomes),
                    "independent_guard_cases": sum(o["independent_guard_proof"] for o in outcomes),
                    "max_loss_to_exit_ms": max(o["loss_to_exit_ns"] for o in outcomes) / 1e6,
-                   "arming_monitor_failure_exit71": 2}
+                   "arming_failure_exit72": 1, "monitor_failure_exit71": 1}
         (self.output / "guard-result.json").write_text(json.dumps(summary, indent=2))
         return summary
 

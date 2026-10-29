@@ -42,8 +42,9 @@ make PAM_MAX_RESP_SIZE=1024
 The installed supervisor launches the shared guarded runner on every attempt,
 including solid-background/no-video locks. Its private Qt generic plugin watches
 the actual locker Wayland connection independently of GUI/media teardown. A
-confirmed transport loss exits abnormally (70); guard startup/monitor failure
-exits 71. Neither path unlocks. Normal PAM unlock still flushes the unlock request
+confirmed transport loss exits abnormally (70); guard monitor failure exits 71
+(engagement unknown), while guard startup failure exits 72 before engagement.
+None of these paths unlocks. Normal PAM unlock still flushes the unlock request
 and exits 0; the supervisor retains its bounded respawn/no-automatic-unlock policy.
 
 Building the native guard/supervisor requires Qt6 Core/Gui/DBus development files,
@@ -180,16 +181,22 @@ see the per-compositor notes under [Recovery](#recovery-last-resort).
 
 The supervisor (`aerial-lock-supervisor`, what `aerial-lock` actually execs)
 owns the locker lifecycle: it spawns the QML locker and respawns it up to
-three times on abnormal death. When respawns run out it **stays locked** and
-escalates loudly — there is **no automatic unlock anywhere**. No path from
+three total attempts on abnormal death. When attempts run out it reports the
+failure — there is **no automatic unlock anywhere**. No path from
 the lock screen into the session exists that does not go through PAM.
 
 **Automatic.** If the locker crashes while the session is locked, the
-supervisor restarts it (up to 3 times). Exit `0` means clean unlock / PAM
+supervisor retries within the three-attempt limit. Locker exit `0` means clean unlock / PAM
 refusal / external invalidation, so it does not respawn; anything else is an
 abnormal death and gets a respawn. Compositor death is detected first so the
-supervisor never spawns into a dead session. If all respawns fail, it stays
-locked — recover manually below.
+supervisor never spawns into a dead session. If all attempts fail, inspect the
+supervisor outcome before assuming that the screen is protected:
+
+| Supervisor exit | Meaning |
+|---|---|
+| 0 | Clean completion, duplicate supervisor for the same session, or compositor gone. Not a lock-readiness signal. |
+| 2 | Other abnormal failures exhausted retries; no automatic unlock. Recover manually below. |
+| 3 | Guard unavailable or failed. If every attempt exited 72, the lock never engaged and the screen is **NOT locked**. If a monitor failed (71) or outcomes were mixed, engagement is not confirmed and the screen **may be unlocked**. Inspect the installation and recover from a TTY if needed. |
 
 **From a TTY (or SSH), as the same user — manual recovery / diagnostics:**
 

@@ -20,7 +20,7 @@ ShellRoot {
                 onPositionChanged: {
                     if (root.armed || !hasVideo || !rendererReady || position < 0.2) return
                     if (Quickshell.env("AERIAL_LOCK_CONNECTION_GUARD_PID") !== String(Quickshell.processId)) {
-                        Qt.exit(71)
+                        Qt.exit(72)
                         return
                     }
                     root.armed = true

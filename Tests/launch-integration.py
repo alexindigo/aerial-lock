@@ -112,22 +112,31 @@ def main():
         session.desktop()
         outcomes = {"stage": str(stage), "supervised_no_video_real_pam_unlock0_desktop": True,
                     "same_pid_exec_owner": qs_pid, "stale_readiness_reconnect_removed": True}
-        for name, program, plugin in (("failed-start", str(session.output / "missing-runner"), str(stage / "lib/aerial-lock/qt-plugins")),
-                                      ("missing-plugin", str(runner), str(session.output / "missing-plugin"))):
+        plugin_root = str(stage / "lib/aerial-lock/qt-plugins")
+        for name, program, plugin, fault, child_exit in (
+                ("failed-start", str(session.output / "missing-runner"), plugin_root, None, 72),
+                ("missing-plugin", str(runner), str(session.output / "missing-plugin"), None, 72),
+                ("arming-failure", str(runner), plugin_root, "guard-thread-start", 72),
+                ("monitor-failure", str(runner), plugin_root, "guard-poll-failure", 71)):
             session.assert_control()
             failure_env = env.copy()
             failure_env.update(AERIAL_LOCK_RUNNER=program, AERIAL_LOCK_PLUGIN_ROOT=plugin)
+            if fault:
+                failure_env.update(LD_PRELOAD=str(root / "build/debug/aerial-tests/libfull-caller-faults.so"),
+                                   AERIAL_TEST_FULL_CALLER_FAULT=fault)
             supervisor = driver.ObservedProcess(["dbus-run-session", "--", str(stage / "bin/aerial-lock-supervisor")],
                                                 failure_env, session.output / (name + ".log"))
-            assert supervisor.finish(15) == 2
+            assert supervisor.finish(15) == 3
             lines = (session.output / (name + ".log")).read_text()
             # Preserve the existing implementation's total-three-attempt bound.
             assert lines.count("launching locker, attempt") == 3
-            assert lines.count("child finished: exit=71") == 3
+            assert lines.count(f"child finished: exit={child_exit}") == 3
             assert lines.count("respawn limit reached") == 1
-            assert "NO automatic unlock" in lines
+            assert "staying locked" not in lines
+            assert ("the lock never engaged; the screen is NOT locked" if child_exit == 72
+                    else "lock engagement not confirmed; the screen may be unlocked") in lines
             if name == "failed-start": assert lines.count("child process error:") == 3
-            outcomes[name + "_settled_once_three_attempts_exit2"] = True
+            outcomes[name + "_settled_once_three_attempts_exit3"] = True
         (session.output / "launch-result.json").write_text(json.dumps(outcomes, indent=2))
         passed = True
         print(json.dumps({"results": str(session.output), "outcomes": outcomes}), flush=True)

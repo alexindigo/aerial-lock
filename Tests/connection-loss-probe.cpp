@@ -404,7 +404,8 @@ int main(int argc, char **argv) {
     if (fault == "guard-thread-start" || fault == "guard-poll-failure") {
         if (child->state() != QProcess::NotRunning && !child->waitForFinished(5000))
             return holdBlocked(child, pid, root, "guard arming/failure did not fail closed");
-        const bool pass = child->exitStatus() == QProcess::NormalExit && child->exitCode() == 71
+        const int expectedExit = fault == "guard-thread-start" ? 72 : 71;
+        const bool pass = child->exitStatus() == QProcess::NormalExit && child->exitCode() == expectedExit
                           && output.contains(fault == "guard-thread-start" ? "GUARD_THREAD_START_REJECTED" : "GUARD_POLL_FAILURE_INJECTED")
                           && !output.contains("CONNECTION_LOSS_READY");
         std::printf("GUARD_FAILURE_OUTCOME locker=%lld exit=%d fault=%s\n",

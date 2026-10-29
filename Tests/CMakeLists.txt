@@ -42,6 +42,10 @@ target_link_libraries(guard-logger-trap PRIVATE Qt6::Core ${CMAKE_DL_LIBS})
 add_test(NAME supervisor-session
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-supervisor-session.py"
             "${AERIAL_LOCK_SOURCE}/supervisor/aerial-lock-supervisor")
+add_test(NAME supervisor-failures
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-supervisor-failures.py"
+            "${AERIAL_LOCK_SOURCE}/supervisor/aerial-lock-supervisor"
+            "${AERIAL_LOCK_SOURCE}/Scripts/aerial-lock-run")
 pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
 add_library(full-caller-faults SHARED full-caller-faults.c)
 target_link_libraries(full-caller-faults PRIVATE PkgConfig::MPV pthread ${CMAKE_DL_LIBS})

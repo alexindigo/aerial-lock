@@ -3,17 +3,21 @@
  *
  * Long-lived child process (the aerial-lock launcher): spawns the locker,
  * respawns it up to three times on abnormal death, and — when respawns run
- * out — stays locked and escalates loudly. There is NO automatic unlock
+ * out — reports failure without claiming an unavailable guard locked the
+ * session. There is NO automatic unlock
  * anywhere: no path from "at the lock screen" to "inside the session" that
  * does not go through PAM. The shelved auto-release work (Takeover::run as a
  * supervisor call path, the escalation gate, probe-based state detection)
  * lives on the `shelved/auto-release` branch; the manual `aerial-unlock`
  * binary is unchanged as the ops/TTY tool.
  *
- * Decision matrix is exit-code only (see plan d29):
+ * Decision matrix is exit-code only:
  *   compositor dead  → session over, clean exit (checked FIRST)
  *   exit 0           → clean unlock / PAM refusal / external invalidation → done
- *   exit != 0        → respawn under limit; at limit, stay locked + escalate
+ *   exit 72          → this attempt never engaged (guard unavailable)
+ *   exit 71          → guard monitor failed; engagement is unknown
+ *   exit != 0        → respawn under limit; at limit, guard failures exit 3,
+ *                      other failures exit 2. No automatic unlock.
  */
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -131,7 +135,7 @@ private:
         }
 
         log(QStringLiteral("launching locker, attempt %1/%2%3")
-                .arg(m_attempt).arg(RESPAWN_LIMIT + 1)
+                .arg(m_attempt).arg(RESPAWN_LIMIT)
                 .arg(m_video.isEmpty() ? QString()
                                        : QStringLiteral(" (video: %1)").arg(m_video)));
         m_child = new QProcess(this);
@@ -156,7 +160,7 @@ private:
             if (child != m_child || m_attemptSettled) return;
             log(QStringLiteral("child process error: %1").arg(child->errorString()));
             if (error == QProcess::FailedToStart)
-                onChildFinished(71, QProcess::CrashExit);
+                onChildFinished(72, QProcess::CrashExit);
         });
         m_child->start();
     }
@@ -215,6 +219,12 @@ private:
 
         // Abnormal death. The correct response to an abnormal death while
         // locked is a respawn.
+        m_onlyPreEngagementFailures = m_onlyPreEngagementFailures && exitCode == 72;
+        m_guardFailed = m_guardFailed || exitCode == 71 || exitCode == 72;
+        if (exitCode == 72)
+            log("guard unavailable — this attempt did not engage the lock");
+        else if (exitCode == 71)
+            log("guard monitor failed — this attempt's engagement is unknown");
         if (m_attempt < RESPAWN_LIMIT) {
             log(QStringLiteral("locker died abnormally — respawning in %1 ms "
                                "(attempt %2/%3)")
@@ -225,6 +235,16 @@ private:
                 launch();
             });
         } else {
+            if (m_guardFailed) {
+                if (m_onlyPreEngagementFailures)
+                    log("respawn limit reached: guard unavailable — the lock never engaged; "
+                        "the screen is NOT locked");
+                else
+                    log("respawn limit reached: guard failed — lock engagement not confirmed; "
+                        "the screen may be unlocked. Recover manually from a TTY (see README)");
+                finishEpisode(3);
+                return;
+            }
             // Respawns ran out. There is NO automatic unlock — stay locked
             // and escalate loudly. Manual recovery is aerial-unlock from a
             // TTY/ops (see README).
@@ -290,6 +310,8 @@ private:
     int m_attempt = 0;
     bool m_hyprFlagSet = false;
     bool m_attemptSettled = false;
+    bool m_onlyPreEngagementFailures = true;
+    bool m_guardFailed = false;
 };
 
 int main(int argc, char **argv)

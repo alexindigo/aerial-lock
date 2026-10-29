@@ -26,6 +26,7 @@
 namespace {
 constexpr int lostExit = 70;
 constexpr int failedExit = 71;
+constexpr int notEngagedExit = 72;
 char moduleAnchor;
 // Published before PAM can fork, and never changed in the parent after arming.
 int inheritedDescriptor = -1;
@@ -38,6 +39,8 @@ struct Monitor {
 };
 
 [[noreturn]] void fail() noexcept { ::_exit(failedExit); }
+// Only arming runs here, at plugin load before QML can create a lock.
+[[noreturn]] void failArming() noexcept { ::_exit(notEngagedExit); }
 
 void childCleanup() noexcept {
     const int descriptor = inheritedDescriptor;
@@ -47,15 +50,15 @@ void childCleanup() noexcept {
 
 void *pinLoadedModule() {
     Dl_info identity{};
-    if (!dladdr(&moduleAnchor, &identity) || !identity.dli_fname || !identity.dli_fbase) fail();
+    if (!dladdr(&moduleAnchor, &identity) || !identity.dli_fname || !identity.dli_fbase) failArming();
     char *path = realpath(identity.dli_fname, nullptr);
-    if (!path) fail();
+    if (!path) failArming();
     void *pin = dlopen(path, RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
     std::free(path);
-    if (!pin) fail();
+    if (!pin) failArming();
     link_map *map = nullptr;
     if (dlinfo(pin, RTLD_DI_LINKMAP, &map) || !map
-        || reinterpret_cast<void *>(map->l_addr) != identity.dli_fbase) fail();
+        || reinterpret_cast<void *>(map->l_addr) != identity.dli_fbase) failArming();
     return pin; // process lifetime, independent of QObject/factory teardown
 }
 
@@ -111,21 +114,21 @@ bool authorized() {
 }
 
 void arm() {
-    if (!qGuiApp) fail();
+    if (!qGuiApp) failArming();
     auto *native = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
-    if (!native || !native->display()) fail();
+    if (!native || !native->display()) failArming();
     const int original = wl_display_get_fd(native->display());
-    if (original < 0) fail();
+    if (original < 0) failArming();
     auto *monitor = new (std::nothrow) Monitor;
-    if (!monitor || inheritedDescriptor >= 0) fail();
+    if (!monitor || inheritedDescriptor >= 0) failArming();
     monitor->modulePin = pinLoadedModule();
     monitor->descriptor = fcntl(original, F_DUPFD_CLOEXEC, 3);
-    if (monitor->descriptor < 0) fail();
+    if (monitor->descriptor < 0) failArming();
     inheritedDescriptor = monitor->descriptor;
-    if (pthread_atfork(nullptr, nullptr, childCleanup)) fail();
-    if (pthread_create(&monitor->thread, nullptr, watch, monitor)) fail();
+    if (pthread_atfork(nullptr, nullptr, childCleanup)) failArming();
+    if (pthread_create(&monitor->thread, nullptr, watch, monitor)) failArming();
     while (!monitor->started.load(std::memory_order_acquire)) sched_yield();
-    if (!qputenv("AERIAL_LOCK_CONNECTION_GUARD_PID", QByteArray::number(getpid()))) fail();
+    if (!qputenv("AERIAL_LOCK_CONNECTION_GUARD_PID", QByteArray::number(getpid()))) failArming();
 }
 } // namespace
 
