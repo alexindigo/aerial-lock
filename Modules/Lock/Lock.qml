@@ -39,6 +39,11 @@ Scope {
 
     readonly property var i18n: config.i18n
 
+    // Construct-time test seam (Tests/lock-lifecycle-shell.qml); the
+    // production shell never overrides the real PAM context.
+    property var pamEndpoint: pam
+    readonly property LockContext context: lockContext
+
     property string panelScreenName: ""
     property bool themeFallbackPinned: false
     property bool themeTopicsSet: false
@@ -102,12 +107,12 @@ Scope {
     Binding { target: lockContext.auth; property: "isError"; value: root.authIsError }
     // PAM retains the previous echo mode after completion/abort. It is
     // meaningful only for a response requested by the active conversation.
-    Binding { target: lockContext.auth; property: "responseVisible"; value: pam.active && pam.responseRequired && pam.responseVisible }
+    Binding { target: lockContext.auth; property: "responseVisible"; value: root.pamEndpoint.active && root.pamEndpoint.responseRequired && root.pamEndpoint.responseVisible }
     Binding { target: lockContext.auth; property: "maxResponseSize"; value: config.pamLimits.maxResponseSize }
     Binding { target: lockContext.auth; property: "dismissAvailable"; value: config.buildFlags.debugAllowDismiss }
 
     Binding { target: lockContext.session; property: "outputName"; value: root.panelScreenName }
-    Binding { target: lockContext.session; property: "loginName"; value: pam.user }
+    Binding { target: lockContext.session; property: "loginName"; value: root.pamEndpoint.user }
     Binding { target: lockContext.session; property: "avatarPath"; value: {
             var home = Quickshell.env("HOME")
             return home && home.length > 0 ? home + "/.face" : ""
@@ -170,7 +175,7 @@ Scope {
         logger.d("Lock", "dismissRequested received")
         if (root.config.buildFlags.debugAllowDismiss) {
             root.attemptCancelled = true
-            pam.abort()
+            root.pamEndpoint.abort()
             logger.d("Lock", "dismiss: setting root.locked = false")
             root.locked = false
         }
@@ -355,8 +360,7 @@ Scope {
         logger.d("Lock", "Component.onCompleted")
         root.tryResolvePanel()
         root.stampPreferred()
-        authState = authPrompting
-        statusMessage = i18n.prompt || "Enter password"
+        root.enterPrompting("")
     }
 
     // d37: stamp preferredResolution on lock start when outputs are
@@ -458,88 +462,98 @@ Scope {
         }
     }
 
+    // Every auth state is entered through these two, so a state set before
+    // a (possibly synchronous) PAM call can never overwrite the state that
+    // call's own message/completion produced.
+    function enterPrompting(message) {
+        root.unlockInProgress = false       // waiting on USER, not PAM
+        root.authState = root.authPrompting
+        root.statusMessage = message && message.length > 0 ? message : (i18n.prompt || "Enter password")
+    }
+
+    function enterAuthenticating() {
+        root.unlockInProgress = true
+        root.authState = root.authAuthenticating
+        root.statusMessage = i18n.authenticating || "Authenticating..."
+        watchdog.restart()
+    }
+
     PamContext {
         id: pam
         config: root.config.pamService
         configDirectory: "/etc/pam.d"
         user: Quickshell.env("USER") || Quickshell.env("LOGNAME") || ""
+    }
+
+    Connections {
+        target: root.pamEndpoint
 
         // Conversation is keyed on pamMessage, emitted per message; the
         // change-gated responseRequiredChanged fires only once per
         // conversation on quickshell 0.3.1, so it never sees prompt 2+.
-        onPamMessage: {
-            logger.d("Lock", "PAM message: " + message + " (error=" + messageIsError + ")")
+        function onPamMessage() {
+            var endpoint = root.pamEndpoint
+            logger.d("Lock", "PAM message: " + endpoint.message + " (error=" + endpoint.messageIsError + ")")
             watchdog.restart()
-            if (responseRequired) {
+            if (endpoint.responseRequired) {
                 // PAM is asking for input.
-                if (acceptedResponse !== null) {
+                if (root.acceptedResponse !== null) {
                     // Phase 1: the just-submitted response answers this
                     // prompt. Clear before respond so the property holds a
-                    // value only across the async gap.
-                    var response = acceptedResponse.text
-                    acceptedResponse = null
-                    pam.respond(response)
-                    unlockInProgress = true
-                    authState = authAuthenticating
-                    statusMessage = i18n.authenticating || "Authenticating..."
+                    // value only across the async gap; the state is set
+                    // before respond, which may answer synchronously.
+                    var response = root.acceptedResponse.text
+                    root.acceptedResponse = null
+                    root.enterAuthenticating()
+                    endpoint.respond(response)
                 } else {
-                    // Phase 2: PAM wants something else — surface its own
-                    // message and wait for the user.
-                    unlockInProgress = false       // waiting on USER, not PAM
-        authState = authPrompting
-                    if (message && message.length > 0) {
-                        statusMessage = message
-                    }
-                    // echo mode follows pam.responseVisible (LockContent reads
-                    // pam.responseVisible directly); field re-enables via the
-                    // unlockInProgress binding.
+                    // Phase 2: PAM wants something else (or the initial
+                    // submit was empty) — show its own message, or the
+                    // translated prompt when it sends none, and wait for the
+                    // user. Echo mode follows responseVisible via the context.
+                    root.enterPrompting(endpoint.message)
                 }
-            } else {
+            } else if (endpoint.message && endpoint.message.length > 0) {
                 // Informational (fingerprint "touch the sensor", etc.) —
                 // PAM is still working; field stays disabled.
-                if (message && message.length > 0) {
-                    statusMessage = message
-                }
+                root.statusMessage = endpoint.message
             }
         }
 
-        onCompleted: function (result) {
+        function onCompleted(result) {
             watchdog.stop()
-            if (attemptCancelled) {
+            if (root.attemptCancelled) {
                 logger.d("Lock", "PamContext.onCompleted ignored: attempt cancelled")
                 return
             }
             logger.d("Lock", "PamContext.onCompleted: result=" + result +
                 " (Success=" + PamResult.Success + ")")
-                if (result === PamResult.Success) {
-                unlockInProgress = false
-                authState = authSuccess
-                statusMessage = i18n.unlocked || "Unlocked"
+            root.unlockInProgress = false
+            root.acceptedResponse = null
+            if (result === PamResult.Success) {
+                root.authState = root.authSuccess
+                root.statusMessage = i18n.unlocked || "Unlocked"
                 logger.d("Lock", "PAM Success: setting root.locked = false")
                 root.locked = false
+            } else if (result === PamResult.MaxTries) {
+                root.authState = root.authMaxTries
+                root.statusMessage = i18n.maxTries || "Too many attempts"
             } else {
-                unlockInProgress = false
-                acceptedResponse = null
-                if (result === PamResult.MaxTries) {
-                    authState = authMaxTries
-                    statusMessage = i18n.maxTries || "Too many attempts"
-                } else {
-                    authState = authFailed
-                    statusMessage = i18n.authFailed || "Authentication failed"
-                }
+                root.authState = root.authFailed
+                root.statusMessage = i18n.authFailed || "Authentication failed"
             }
         }
 
-        onError: function (error) {
+        function onError(error) {
             watchdog.stop()
-            if (attemptCancelled) {
+            if (root.attemptCancelled) {
                 logger.d("Lock", "PamContext.onError ignored: attempt cancelled")
                 return
             }
-            unlockInProgress = false
-            acceptedResponse = null
-            authState = authError
-            statusMessage = i18n.authError || "Authentication error"
+            root.unlockInProgress = false
+            root.acceptedResponse = null
+            root.authState = root.authError
+            root.statusMessage = i18n.authError || "Authentication error"
         }
     }
 
@@ -556,11 +570,11 @@ Scope {
         onTriggered: {
             logger.d("Lock", "PAM watchdog: no PAM traffic for " + interval + "ms — aborting stuck transaction")
             root.attemptCancelled = true
-            pam.abort()
-            unlockInProgress = false
-            acceptedResponse = null
-            authState = authError
-            statusMessage = i18n.timedOut || "Authentication timed out — try again"
+            root.pamEndpoint.abort()
+            root.unlockInProgress = false
+            root.acceptedResponse = null
+            root.authState = root.authError
+            root.statusMessage = i18n.timedOut || "Authentication timed out — try again"
         }
     }
 
@@ -568,7 +582,7 @@ Scope {
         // Surfaces unregister while the tree is torn down; never migrate then.
         root.tearingDown = true
         root.attemptCancelled = true
-        pam.abort()
+        root.pamEndpoint.abort()
     }
 
     Connections {
@@ -602,7 +616,7 @@ Scope {
 
     function tryUnlock() {
         logger.d("Lock", "tryUnlock: unlockInProgress=" + unlockInProgress +
-            " pam.responseRequired=" + pam.responseRequired)
+            " pam.responseRequired=" + root.pamEndpoint.responseRequired)
         if (unlockInProgress) {
             return
         }
@@ -611,32 +625,26 @@ Scope {
         // invalidates stale view publications (all mirrors clear).
         var draft = lockContext.auth.input.consume()
 
-        if (pam.responseRequired) {
+        if (root.pamEndpoint.responseRequired) {
             logger.d("Lock", "tryUnlock: calling pam.respond")
-            acceptedResponse = null
-            pam.respond(draft)
-            unlockInProgress = true
-            authState = authAuthenticating
-            statusMessage = i18n.authenticating || "Authenticating..."
-            watchdog.restart()
+            root.acceptedResponse = null
+            root.enterAuthenticating()
+            root.pamEndpoint.respond(draft) // an empty answer to an active prompt is valid
         } else {
             logger.d("Lock", "tryUnlock: calling pam.start")
-            watchdog.restart()
-            attemptCancelled = false
-            // Reserve the response before the asynchronous first PAM prompt.
-            unlockInProgress = true
-            if (!pam.start()) {
+            root.attemptCancelled = false
+            // Reserve the response before the (possibly synchronous) first
+            // PAM prompt. An empty initial submit starts PAM and exposes its
+            // prompt WITHOUT queueing an empty first answer.
+            root.acceptedResponse = draft.length > 0 ? ({ "text": draft }) : null
+            root.enterAuthenticating()
+            if (!root.pamEndpoint.start()) {
                 watchdog.stop()
-                acceptedResponse = null
-                unlockInProgress = false
-                authState = authError
-                statusMessage = i18n.authError || "Authentication error"
-                logger.w("aerial-lock", "pam.start() failed for service " + pam.config)
-            } else {
-                // An empty initial submit starts PAM and exposes its prompt
-                // WITHOUT queueing an empty first answer.
-                acceptedResponse = draft.length > 0 ? ({ "text": draft }) : null
-                authState = authAuthenticating
+                root.acceptedResponse = null
+                root.unlockInProgress = false
+                root.authState = root.authError
+                root.statusMessage = i18n.authError || "Authentication error"
+                logger.w("aerial-lock", "pam.start() failed for service " + root.pamEndpoint.config)
             }
         }
     }
