@@ -144,8 +144,9 @@ FocusScope {
             // never rendered text — Google Sans digits are proportional
             // (measured: "00" ≈ 180s at 140s), so a content-sized column
             // let the wall clock move the centered group's geometry.
-            width: 190 * root.s
+            Layout.minimumWidth: 190 * root.s
             Layout.preferredWidth: 190 * root.s
+            Layout.maximumWidth: 190 * root.s
 
             Column {
                 spacing: -24 * root.s
