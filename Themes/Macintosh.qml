@@ -65,6 +65,7 @@ FocusScope {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: text.length > 0
             text: root.context.session.loginName
+            textFormat: Text.PlainText
             color: root.context.colors.text
             font.pixelSize: Math.round(Math.min(root.vmin * 0.026, 26))
         }
@@ -93,6 +94,7 @@ FocusScope {
             width: Math.min(root.width * 0.8, 420)
             visible: text.length > 0
             text: root.context.auth.status
+            textFormat: Text.PlainText
             color: root.context.auth.isError
                 ? root.context.colors.textError
                 : root.context.colors.text

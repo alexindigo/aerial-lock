@@ -84,6 +84,7 @@ Item {
             x: root.padding
             y: root.padding
             text: root.text
+            textFormat: Text.PlainText
             color: "white"
             font.pixelSize: root.fontPixelSize
             font.family: root.fontFamily
@@ -125,6 +126,7 @@ Item {
         x: 0
         y: 0
         text: root.text
+        textFormat: Text.PlainText
         color: root.tintColor
         font.pixelSize: root.fontPixelSize
         font.family: root.fontFamily
@@ -137,6 +139,7 @@ Item {
         x: 0
         y: 0
         text: root.text
+        textFormat: Text.PlainText
         color: root.fallbackColor
         font.pixelSize: root.fontPixelSize
         font.family: root.fontFamily

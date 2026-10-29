@@ -157,6 +157,7 @@ FocusScope {
 
         Text {
             text: Qt.formatTime(root.context.clock.now, "HH:mm")
+            textFormat: Text.PlainText
             color: root.mistWhite
             font.family: root.uiFont
             font.pixelSize: 80 * root.s
@@ -180,6 +181,7 @@ FocusScope {
             }
             Text {
                 text: Qt.formatDate(root.context.clock.now, "dddd, MMMM d").toUpperCase()
+                textFormat: Text.PlainText
                 color: root.sakuraPink
                 font.family: root.uiFont
                 font.pixelSize: 12 * root.s
@@ -206,6 +208,7 @@ FocusScope {
             objectName: "userName"
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.context.session.loginName
+            textFormat: Text.PlainText
             color: root.mistWhite
             font.family: root.uiFont
             font.pixelSize: 18 * root.s
@@ -382,6 +385,7 @@ FocusScope {
             wrapMode: Text.WordWrap
             visible: text.length > 0
             text: root.context.auth.status
+            textFormat: Text.PlainText
             color: root.context.auth.isError ? "#e08090" : root.mistWhite
             opacity: root.context.auth.isError ? 1.0 : 0.7
             font.family: root.uiFont
@@ -398,6 +402,7 @@ FocusScope {
         anchors.bottomMargin: 8 * root.s
         visible: root.hoverNotice.length > 0
         text: root.hoverNotice
+        textFormat: Text.PlainText
         font.family: root.uiFont
         font.pixelSize: 11 * root.s
         color: root.sakuraLight
@@ -478,6 +483,7 @@ FocusScope {
                     required property var modelData
                     objectName: modelData.name
                     text: modelData.label
+                    textFormat: Text.PlainText
                     color: "white"
                     // Unavailable: statically dimmed, never brightening into
                     // an active look on hover; hover shows the notice only.

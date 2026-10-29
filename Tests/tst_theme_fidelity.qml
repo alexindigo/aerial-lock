@@ -121,6 +121,36 @@ Item {
             }, 500, "non-routine instructions stay visible while entering a response")
         }
 
+        function test_markup_message_is_literal_data() {
+            var rows = bundledThemes.map(function (filename) { return {tag: filename, filename: filename} })
+            rows.push({tag: "fallback", filename: "fallback"})
+            return rows
+        }
+
+        function test_markup_message_is_literal(data) {
+            load(data.filename)
+            ctx.auth.status = "<b>Code</b> &amp; <i>token</i>"
+            wait(300)
+            var texts = []
+            collectStatusTexts(theme, ctx.auth.status, texts)
+            verify(texts.length > 0, "the PAM message reaches a visible text consumer")
+            for (var i = 0; i < texts.length; i++) {
+                var text = texts[i]
+                var format = text.textFormat
+                var paintedWidth = text.contentWidth
+                var paintedHeight = text.contentHeight
+                waitForRendering(text)
+                // Compare the consumer's laid-out glyphs with an explicitly
+                // literal render, not just the value arriving in its binding.
+                text.textFormat = Text.PlainText
+                wait(100)
+                waitForRendering(text)
+                compare(paintedWidth, text.contentWidth, "rendered glyph width must be literal")
+                compare(paintedHeight, text.contentHeight, "rendered glyph height must be literal")
+                compare(format, Text.PlainText)
+            }
+        }
+
         function insideSurface(obj, what) {
             var tl = obj.mapToItem(theme, 0, 0)
             var br = obj.mapToItem(theme, obj.width, obj.height)
@@ -195,7 +225,8 @@ Item {
         }
 
         function load(filename, w, h) {
-            var component = Qt.createComponent("../Themes/" + filename)
+            var component = Qt.createComponent(filename === "fallback"
+                ? "../Modules/Lock/LockContent.qml" : "../Themes/" + filename)
             compare(component.status, Component.Ready, component.errorString())
             theme = component.createObject(root, {
                 "context": ctx,

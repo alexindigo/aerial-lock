@@ -46,6 +46,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: root.initials
+            textFormat: Text.PlainText
             visible: root.initials.length > 0
             color: root.foreground
             font.pixelSize: Math.round(root.diameter * 0.42)

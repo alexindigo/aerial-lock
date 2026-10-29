@@ -237,6 +237,7 @@ FocusScope {
             anchors.rightMargin: 40 * root.s
             anchors.verticalCenter: parent.verticalCenter
             text: Qt.formatTime(root.context.clock.now, "HH")
+            textFormat: Text.PlainText
             font.family: root.uiFont
             font.pixelSize: 110 * root.s
             font.weight: Font.Black
@@ -254,6 +255,7 @@ FocusScope {
             Item { width: 1; height: root.narrowOrbital ? 24 * root.s : 0 }
             Text {
                 text: Qt.formatDate(root.context.clock.now, "dd MMM yyyy").toUpperCase()
+                textFormat: Text.PlainText
                 font.family: root.uiFont
                 font.pixelSize: 13 * root.s
                 font.letterSpacing: 4 * root.s
@@ -263,6 +265,7 @@ FocusScope {
             }
             Text {
                 text: Qt.formatDate(root.context.clock.now, "dddd").toUpperCase()
+                textFormat: Text.PlainText
                 font.family: root.uiFont
                 font.pixelSize: 18 * root.s
                 font.letterSpacing: 8 * root.s
@@ -309,6 +312,7 @@ FocusScope {
         anchors.bottomMargin: 16 * root.s
         visible: root.hoverNotice.length > 0
         text: root.hoverNotice
+        textFormat: Text.PlainText
         font.family: root.uiFont
         font.pixelSize: 11 * root.s
         font.letterSpacing: 2 * root.s
@@ -342,6 +346,7 @@ FocusScope {
                 objectName: "userName"
                 anchors.right: parent.right
                 text: root.context.session.loginName.toUpperCase()
+                textFormat: Text.PlainText
                 font.family: root.uiFont
                 font.pixelSize: 18 * root.s
                 font.weight: Font.Bold
@@ -470,6 +475,7 @@ FocusScope {
             wrapMode: Text.WordWrap
             visible: text.length > 0
             text: root.context.auth.status
+            textFormat: Text.PlainText
             color: root.context.auth.isError ? root.errorColor : root.dimText
             style: Text.Raised
             styleColor: "#80000000"
@@ -546,6 +552,7 @@ FocusScope {
                     x: clockContainer.cx + nRad * Math.cos(disp) - width / 2
                     y: clockContainer.cy + nRad * Math.sin(disp) - height / 2
                     text: String(index).padStart(2, '0')
+                    textFormat: Text.PlainText
                     font.family: root.uiFont
                     font.pixelSize: ring.labelSize
                     font.weight: spotlight > 0.5 ? Font.Bold : Font.Normal
@@ -572,6 +579,7 @@ FocusScope {
             id: actTxt
             anchors.right: parent.right
             text: label.toUpperCase()
+            textFormat: Text.PlainText
             color: root.dimText
             font.family: root.uiFont
             font.pixelSize: 10 * root.s

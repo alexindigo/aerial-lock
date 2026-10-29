@@ -51,6 +51,7 @@ FocusScope {
         anchors.bottomMargin: 12 * root.s
         visible: root.hoverNotice.length > 0
         text: root.hoverNotice
+        textFormat: Text.PlainText
         font.pixelSize: 12 * root.s
         color: "#c8dce8"
         style: Text.Raised
@@ -145,6 +146,7 @@ FocusScope {
             objectName: "userName"
             anchors.horizontalCenter: parent.horizontalCenter
             text: root.context.session.loginName
+            textFormat: Text.PlainText
             font.family: root.uiFont
             font.pixelSize: 26 * root.s
             color: "white"
@@ -313,6 +315,7 @@ FocusScope {
             wrapMode: Text.WordWrap
             visible: text.length > 0
             text: root.context.auth.status
+            textFormat: Text.PlainText
             font.family: root.uiFont
             font.pixelSize: 12 * root.s
             color: root.context.auth.isError ? "#ffddaa" : "#dce8f0"
@@ -469,6 +472,7 @@ FocusScope {
 
             Text {
                 text: Qt.formatTime(root.context.clock.now, "h:mm AP")
+                textFormat: Text.PlainText
                 font.family: root.uiFont
                 font.pixelSize: 18 * root.s
                 font.weight: Font.DemiBold
@@ -486,6 +490,7 @@ FocusScope {
             }
             Text {
                 text: Qt.formatDate(root.context.clock.now, "dddd, MMMM d")
+                textFormat: Text.PlainText
                 font.family: root.uiFont
                 font.pixelSize: 14 * root.s
                 color: "#e0f0ff"
@@ -580,6 +585,7 @@ FocusScope {
             id: pwText
             anchors.centerIn: parent
             text: parent.label
+            textFormat: Text.PlainText
             font.family: root.uiFont
             font.pixelSize: 13 * root.s
             color: "white"

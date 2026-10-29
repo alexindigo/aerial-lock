@@ -50,6 +50,7 @@ Item {
                 width: parent.width
                 wrapMode: Text.Wrap
                 text: root.context.auth.status
+                textFormat: Text.PlainText
                 color: root.context.auth.isError
                     ? colors.textError
                     : colors.text
@@ -97,6 +98,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: labels.dismissDebug
+                    textFormat: Text.PlainText
                     color: colors.textError
                     font.pixelSize: panel.fontSize
                 }

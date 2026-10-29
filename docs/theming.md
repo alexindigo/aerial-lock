@@ -141,6 +141,12 @@ All authentication flows through `context.auth` — a theme never touches
 PAM, mpv, or the config. All strings are `""` and numbers `0`/`-1` when
 unknown.
 
+Runtime text is data, not markup: use `textFormat: Text.PlainText` for every
+`Text` showing PAM messages, login/session names, video/source metadata, POI,
+translated labels or notices. The same applies to reusable text components:
+their callers must not be able to turn a string into an HTML image/network
+request. Reserve styled text for literal theme-owned markup only.
+
 ### `context.auth`
 
 | Property / method | Type | Meaning |

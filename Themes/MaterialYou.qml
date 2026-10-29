@@ -116,6 +116,7 @@ FocusScope {
         horizontalAlignment: Text.AlignHCenter
         visible: root.hoverNotice.length > 0
         text: root.hoverNotice
+        textFormat: Text.PlainText
         font.family: root.uiFont
         font.pixelSize: 11 * root.s
         font.bold: true
@@ -153,6 +154,7 @@ FocusScope {
                 anchors.horizontalCenter: parent.horizontalCenter
                 Text {
                     text: Qt.formatTime(root.context.clock.now, "hh")
+                    textFormat: Text.PlainText
                     font.family: root.uiFont
                     font.pixelSize: 140 * root.s
                     font.weight: Font.Bold
@@ -160,6 +162,7 @@ FocusScope {
                 }
                 Text {
                     text: Qt.formatTime(root.context.clock.now, "mm")
+                    textFormat: Text.PlainText
                     font.family: root.uiFont
                     font.pixelSize: 140 * root.s
                     font.weight: Font.Bold
@@ -183,6 +186,7 @@ FocusScope {
                     elide: Text.ElideRight
                     horizontalAlignment: Text.AlignHCenter
                     text: Qt.formatDate(root.context.clock.now, "dddd, MMM d").toUpperCase()
+                    textFormat: Text.PlainText
                     font.family: root.uiFont
                     font.pixelSize: 11 * root.s
                     font.bold: true
@@ -317,6 +321,7 @@ FocusScope {
                             visible: root.context.auth.input.text.length === 0
                                      && !root.statusNeedsWrap
                             text: root.slotMessage
+                            textFormat: Text.PlainText
                             font.family: root.uiFont
                             font.pixelSize: 11 * root.s
                             font.bold: true
@@ -348,6 +353,7 @@ FocusScope {
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
                         text: root.slotMessage
+                        textFormat: Text.PlainText
                         font.family: root.uiFont
                         font.pixelSize: 11 * root.s
                         font.bold: true
@@ -373,6 +379,7 @@ FocusScope {
                                 objectName: "userPillText"
                                 anchors.centerIn: parent
                                 text: root.context.session.loginName.toUpperCase()
+                                textFormat: Text.PlainText
                                 font.family: root.uiFont
                                 font.pixelSize: 10 * root.s
                                 font.bold: true
@@ -523,6 +530,7 @@ FocusScope {
                 spacing: 2 * root.s
                 Text {
                     text: label
+                    textFormat: Text.PlainText
                     font.family: root.uiFont
                     font.pixelSize: 12 * root.s
                     font.bold: true
@@ -530,6 +538,7 @@ FocusScope {
                 }
                 Text {
                     text: sublabel
+                    textFormat: Text.PlainText
                     font.family: root.uiFont
                     font.pixelSize: 9 * root.s
                     color: root.inkMid
