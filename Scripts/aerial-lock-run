@@ -13,7 +13,32 @@ if [[ ! -d "$shell_dir" || ! -d "$plugin_root" || ! -f "$plugin_root/generic/lib
     printf 'aerial-lock-run: shell/plugin paths are unavailable\n' >&2
     exit 71
 fi
-unset AERIAL_LOCK_CONNECTION_GUARD_PID QT_WAYLAND_RECONNECT
+unset AERIAL_LOCK_CONNECTION_GUARD_PID QT_WAYLAND_RECONNECT AERIAL_LOCK_RUNTIME_DIR
+# Private per-locker runtime directory for frame grabs (bounded, reused files).
+# Never a shared temporary directory: without a usable XDG_RUNTIME_DIR the
+# locker simply does not sample accents.
+if [[ "${XDG_RUNTIME_DIR:-}" == /* ]]; then
+    base="$XDG_RUNTIME_DIR/aerial-lock"
+    (umask 077; mkdir -p "$base") 2>/dev/null || true
+    if [[ -d "$base" && ! -L "$base" && -O "$base" ]]; then
+        chmod 700 "$base"
+        # Directories of lockers that are no longer running hold only stale frames.
+        for stale in "$base"/locker-*; do
+            [[ -d "$stale" && ! -L "$stale" && -O "$stale" ]] || continue
+            pid=${stale##*/locker-}
+            [[ "$pid" =~ ^[0-9]+$ && ! -e "/proc/$pid" ]] || continue
+            rm -f "$stale"/accent-*.jpg
+            rmdir "$stale" 2>/dev/null || true
+        done
+        own="$base/locker-$$"   # $$ stays the locker's PID across exec
+        (umask 077; mkdir -p "$own") 2>/dev/null || true
+        if [[ -d "$own" && ! -L "$own" && -O "$own" ]]; then
+            chmod 700 "$own"
+            rm -f "$own"/accent-*.jpg
+            export AERIAL_LOCK_RUNTIME_DIR="$own"
+        fi
+    fi
+fi
 export AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID=$$
 export QT_QPA_PLATFORM=wayland QSG_RHI_BACKEND=opengl QS_DISABLE_CRASH_HANDLER=1
 export QT_PLUGIN_PATH="$plugin_root${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"

@@ -17,6 +17,12 @@ Item {
     id: root
     property var player: null        // MpvPlayer, injected by LockBackground
     property string trackKey: ""     // LockBackground's currentFilename
+    // Private directory owned by the launcher (never a shared temporary
+    // directory). Empty or relative disables sampling.
+    property string shotDirectory: ""
+    // Only a background whose accent is consumed samples; an inactive
+    // sampler stays idle and settles afresh when it becomes active.
+    property bool active: false
     readonly property color accent: internal.accent
     signal samplingFailed(string reason)
 
@@ -43,15 +49,22 @@ Item {
         property QtObject pendingPlayer: null
         property string imageUrl: ""
         property string stage: "idle"
-        // One file per shot (a fresh URL per attempt sidesteps the canvas's
-        // URL-keyed image cache entirely).
-        readonly property string shotBase: "/tmp/aerial-lock-accent-"
-                + Math.floor(Math.random() * 1e9).toString(36)
+        // One reused file per sampler, so files are bounded by outputs, not
+        // by tracks or shots. Each shot gets its own URL query, so the
+        // URL-keyed image cache never serves an earlier frame; the previous
+        // URL is unloaded before the next command (one ticket in flight).
+        readonly property string instanceId: Math.floor(Math.random() * 1e9).toString(36)
+        // A retired receiver may still complete its write later, so the
+        // next shot after a receiver retirement uses a fresh file.
+        property int fileEpoch: 0
+        readonly property bool usable: root.active && root.shotDirectory.charAt(0) === "/"
+        onUsableChanged: root.supersede()
         onPendingPlayerChanged: {
             var ticket = pending
             if (ticket && pendingPlayer === null) {
                 ticket.discarded = true
                 ticket.commandDone = true // receiver retirement, not write cancellation
+                fileEpoch++
                 commandDeadline.stop()
                 root.retire(ticket, false)
             }
@@ -102,12 +115,12 @@ Item {
             if (ticket.commandDone)
                 retire(ticket, false)
         }
-        if (!internal.stopped && root.trackKey.length > 0)
+        if (!internal.stopped && internal.usable && root.trackKey.length > 0)
             settleTimer.restart()
     }
 
     function tryShot() {
-        if (internal.stopped || internal.pending || !internal.eligible
+        if (internal.stopped || internal.pending || !internal.eligible || !internal.usable
                 || internal.attempt >= 3 || root.trackKey.length === 0
                 || !root.player)
             return
@@ -119,9 +132,11 @@ Item {
         }
         internal.attempt++
         internal.shots++
-        var path = internal.shotBase + "-" + internal.shots + ".jpg"
+        var path = root.shotDirectory + "/accent-" + internal.instanceId
+                + (internal.fileEpoch > 0 ? "-" + internal.fileEpoch : "") + ".jpg"
         var ticket = { id: 0, generation: internal.generation, track: root.trackKey,
-                       player: root.player, path: path, url: "file://" + path,
+                       player: root.player, path: path,
+                       url: "file://" + path + "?shot=" + internal.shots,
                        discarded: false, commandDone: false }
         internal.pending = ticket
         internal.pendingPlayer = ticket.player
@@ -196,6 +211,9 @@ Item {
 
     onTrackKeyChanged: supersede()
     onPlayerChanged: supersede()
+    onShotDirectoryChanged: if (internal.usable) supersede() // a new file location
+    // Initial property values may be assigned in any order during creation.
+    Component.onCompleted: supersede()
     Component.onDestruction: shutdown()
 
     Connections {

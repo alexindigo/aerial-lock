@@ -14,6 +14,10 @@ Item {
     // mpv (error + advance), never a crash.
     property var items: []
     property bool stopped: false
+    // Injected by Lock: the locker's private runtime directory for frame
+    // grabs, and whether this background's accent is the consumed one.
+    property string frameDirectory: ""
+    property bool samplingActive: false
 
     signal loadFailed(string message)
 
@@ -74,6 +78,8 @@ Item {
         id: sampler
         player: player
         trackKey: root.currentFilename
+        shotDirectory: root.frameDirectory
+        active: root.samplingActive
         onSamplingFailed: function (reason) { root.loadFailed(reason) }
     }
 

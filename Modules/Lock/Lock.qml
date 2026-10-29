@@ -52,6 +52,10 @@ Scope {
     // dependency (README).
     readonly property var bgItems: sourceCache.playlist
     readonly property bool hasBackground: sourceCache.resolved && bgItems.length > 0
+    // Private per-locker runtime directory created by the launch wrapper
+    // (Scripts/aerial-lock-run). Frame grabs never fall back to /tmp:
+    // without it, accent sensing is simply off.
+    readonly property string frameDirectory: Quickshell.env("AERIAL_LOCK_RUNTIME_DIR") || ""
 
     SourceCache {
         id: sourceCache
@@ -294,6 +298,9 @@ Scope {
                     // Loader.item is typed QObject; the loaded item is
                     // LockBackground.qml, which defines the loadFailed
                     // signal — dynamic by design, qmllint cannot see it.
+                    // Only the panel surface's accent is consumed.
+                    item.frameDirectory = root.frameDirectory
+                    item.samplingActive = Qt.binding(function () { return lockSurface.hostsPanel })
                     item.loadFailed.connect(function (message) {
                         root.logger.w("aerial-lock", "video background failed: " + message)
                     })

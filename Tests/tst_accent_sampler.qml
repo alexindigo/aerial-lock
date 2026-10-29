@@ -341,4 +341,76 @@ TestCase {
         compare(fixture.fakePlayer.submissions, 3, "an exhausted track is not restarted")
         compare(fixture.sampler.accent.a, 0)
     }
+    // Frame files are bounded: one reused private file per sampler, a fresh
+    // URL per shot, and nothing sampled without an owner directory or while
+    // the background's accent is not consumed.
+    function test_shots_reuse_one_private_file() {
+        var first = firstCall()
+        verify(first.path.indexOf(fixture.frameDirectory + "/accent-") === 0, first.path)
+        fixture.fakePlayer.finish(first.id, -12, false)
+        tryVerify(function () { return fixture.fakePlayer.calls.length === 2 }, 1500)
+        fixture.sampler.trackKey = "B"
+        fixture.fakePlayer.finish(fixture.fakePlayer.calls[1].id, 0, true)
+        tryVerify(function () { return fixture.fakePlayer.calls.length === 3 }, 2500)
+        var paths = {}
+        var urls = {}
+        for (var i = 0; i < fixture.fakePlayer.calls.length; i++) {
+            paths[fixture.fakePlayer.calls[i].path] = true
+            urls[fixture.fakePlayer.calls[i].url] = true
+        }
+        compare(Object.keys(paths).length, 1, "one reused file per sampler")
+        compare(Object.keys(urls).length, 3, "a distinct image URL per shot")
+    }
+    function test_reused_file_never_serves_cached_frame() {
+        var first = firstCall()
+        fixture.fakePlayer.finish(first.id, 0, true)
+        tryVerify(function () { return fixture.sampler.accent.a > 0.9 }, 2500)
+        verify(fixture.sampler.accent.g > fixture.sampler.accent.b)
+        fixture.paintColor = "#4080c0"
+        var paints = fixture.writerPaints
+        fixture.imageWriter.requestPaint()
+        tryVerify(function () { return fixture.writerPaints > paints }, 1000)
+        fixture.sampler.trackKey = "B"
+        tryVerify(function () { return fixture.fakePlayer.calls.length === 2 }, 2500)
+        var second = fixture.fakePlayer.calls[1]
+        compare(second.path, first.path)
+        fixture.fakePlayer.finish(second.id, 0, true)
+        tryVerify(function () { return fixture.sampler.accent.b > fixture.sampler.accent.g }, 2500)
+        tryVerify(function () { return fixture.sampler.accent.a > 0.9 }, 2500)
+    }
+    function test_no_owner_directory_disables_sampling() {
+        fixture.sampler.shotDirectory = ""
+        wait(1700)
+        compare(fixture.fakePlayer.submissions, 0)
+        fixture.sampler.shotDirectory = "relative/dir"
+        wait(1700)
+        compare(fixture.fakePlayer.submissions, 0, "only an absolute owner directory is used")
+        compare(fixture.sampler.accent.a, 0)
+    }
+    function test_inactive_sampler_is_idle_until_consumed() {
+        fixture.sampler.active = false
+        wait(1700)
+        compare(fixture.fakePlayer.submissions, 0)
+        fixture.sampler.active = true
+        wait(1000)
+        compare(fixture.fakePlayer.submissions, 0, "activation settles afresh")
+        var call = firstCall()
+        fixture.fakePlayer.finish(call.id, 0, true)
+        tryVerify(function () { return fixture.sampler.accent.a > 0.9 }, 2500)
+        fixture.sampler.active = false
+        tryCompare(fixture.sampler, "accent", Qt.rgba(0, 0, 0, 0), 1500)
+    }
+    function test_receiver_retirement_rotates_the_file() {
+        var old = firstCall()
+        var retiring = replacementFactory.createObject(tests.parent)
+        fixture.sampler.player = retiring
+        fixture.fakePlayer.finish(old.id, -12, false)
+        tryVerify(function () { return retiring.calls.length === 1 }, 2500)
+        var pending = retiring.calls[0]
+        fixture.sampler.player = fixture.fakePlayer
+        retiring.destroy()
+        tryVerify(function () { return fixture.fakePlayer.calls.length === 2 }, 2500)
+        verify(fixture.fakePlayer.calls[1].path !== pending.path,
+               "a retired receiver's possibly outstanding write never shares the next file")
+    }
 }

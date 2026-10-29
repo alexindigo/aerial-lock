@@ -265,7 +265,12 @@ The production accent sampler settles a track for 1.5 seconds, then owns one
 completion-driven command → image → paint transaction. It retries at most three
 times and crossfades the resulting color over 600 ms. Canvas decodes within a
 64×40 source-size bound and unloads the captured URL after painting or failure;
-fresh temporary JPEGs retain the existing leftover-file policy. Track changes
+each sampler reuses one file (a per-shot URL query keeps the image cache from
+serving an earlier frame) in the locker's private runtime directory,
+`$XDG_RUNTIME_DIR/aerial-lock/locker-<pid>` (mode 0700, created by the launch
+wrapper, which also removes directories of lockers that no longer run). Only
+the background whose accent is consumed samples. Without that directory,
+sampling is off; frames are never written to a shared temporary directory. Track changes
 retire interest without freeing an outstanding command's slot. A command deadline
 does not cancel a file write or admit a replacement; real completion or receiver
 retirement releases the slot. Video that appears only after the settle restarts

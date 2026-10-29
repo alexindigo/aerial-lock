@@ -1,4 +1,5 @@
 import QtQuick
+import QtCore
 import "../Modules/Lock" as LockModule
 
 Item {
@@ -11,6 +12,10 @@ Item {
     property int writerPaints: 0
     property bool lastSaveSucceeded: false
     property color paintColor: "#80c040"
+    // The sampler's private directory; the runner's TMPDIR here (QML cannot
+    // create directories). Run the suites with a disposable TMPDIR.
+    readonly property string frameDirectory: StandardPaths.writableLocation(StandardPaths.TempLocation)
+            .toString().replace(/^file:\/\//, "")
 
     QtObject {
         id: fakePlayer
@@ -25,7 +30,9 @@ Item {
             if (reject < 0)
                 return reject
             var id = nextId++
-            calls = calls.concat([{ id: id, path: params[1], url: "file://" + params[1] }])
+            // The sampler keys its n-th shot's image as <file>?shot=<n>.
+            calls = calls.concat([{ id: id, path: params[1],
+                                    url: "file://" + params[1] + "?shot=" + submissions }])
             return id
         }
         function finish(id, error, writeImage) {
@@ -58,5 +65,7 @@ Item {
         height: 40
         player: fakePlayer
         trackKey: "A"
+        shotDirectory: fixture.frameDirectory
+        active: true
     }
 }
