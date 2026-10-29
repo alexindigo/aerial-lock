@@ -5,8 +5,8 @@ background (local files or Apple/community packs) with a solid colour
 until the first frame, layered JSON config and i18n. Planned future work
 is listed under [Roadmap](#roadmap).
 
-Targets `ext-session-lock-v1`. Developed and tested on Niri; other
-compositors are untested — see [Compositor support](#compositor-support).
+Targets `ext-session-lock-v1`. Tested on Niri and Hyprland — see
+[Compositor support](#compositor-support) for coverage and limitations.
 Not compatible with GNOME or KDE Plasma (their compositors do not expose
 `ext-session-lock-v1` to third-party lockers).
 
@@ -20,7 +20,7 @@ sudo make install
 
 Runtime requirements: [Quickshell](https://github.com/outfoxxed/quickshell)
 (any build — not tied to a specific fork),
-[qt6-mpvqml](https://github.com/alexindigo/mpvqml), which plays the video
+[qt6-mpvqml ≥ 0.2.0](https://github.com/alexindigo/mpvqml), which plays the video
 background, and Qt6's `Qt5Compat.GraphicalEffects` module (`qt6-5compat` on
 Arch) for the frosted-clock effect and avatar masking. With an empty
 `sources` list the player is never started and the screen stays
@@ -83,7 +83,11 @@ AERIAL_LOCK_PAM_SERVICE=login bash Scripts/dev/run.sh
 
 ### Testing
 
-For development testing, build and run with the debug flags:
+Use a disposable test VM for builds, automated tests and nested-compositor
+experiments. See [`Tests/README.md`](Tests/README.md) for the portable suites and
+integration drivers, and [`docs/nested-testing.md`](docs/nested-testing.md) for
+the interactive workflow. Inside that VM, a development build can be launched
+with the debug flags:
 
 ```
 make dev
@@ -247,21 +251,37 @@ aerial-unlock --purge    # kill stale aerial-lock processes, then recover
 the compositor, not logind. "Correct password always fails" is a different
 symptom (`pam_faillock`); fix with `sudo faillock --reset`.
 
-*Design note:* an earlier automatic takeover-release ("the supervisor unlocks
-for you") was shelved to the `shelved/auto-release` branch — it was the only
-unauthenticated unlock in the design, so it was cut. If the locker can't
-start at all, recovery is manual (this section). A compositor-side minimal
-emergency locker (the KDE pattern) is recorded as the future answer for that
-strand case.
+If the locker cannot start, fix the installation from a TTY. When a previous
+attempt already engaged the lock, manual recovery may also be needed; the
+supervisor never performs takeover-and-unlock automatically.
+
+## Known limitations
+
+- **Stock Fcitx visible-echo prompts.** With a CJK engine active, a PAM prompt
+  requesting visible input can trigger a candidate popup whose parent is not
+  valid for a session-lock surface. The compositor may disconnect the locker;
+  the connection guard exits 70 and bounded retries may end with a clientless
+  lock requiring TTY recovery. Ordinary hidden-password prompts use Fcitx's
+  plain-keyboard path by default. Keep `AllowInputMethodForPassword` disabled
+  and switch to the plain keyboard input method for visible-echo prompts.
+- **Memory during long video locks.** Continuous track changes have shown
+  post-warm-up RSS growth of about **19 MB/hour**. Attribution remains open;
+  this alpha does not claim flat memory use over arbitrarily long locks.
+- **Nested Hyprland input.** Synthetic keyboard/pointer input into nested
+  Wayland-backed Hyprland is not reliable in every setup. The automated
+  multi-output lane uses render-backed virtual outputs; this does not establish
+  physical-output or real platform-IME coverage. See the nested testing guide.
+- **Authentication and secret lifetime.** PAM account-management flows are not
+  implemented, and editable response strings live on the QML heap. See the
+  [configuration reference](docs/config.reference.md#known-limitations).
 
 ## Roadmap
 
 Planned, in rough order: POI overlays / location metadata for the video
 background (local sources and Apple/community packs, including fetch and
 cache, are implemented), compositor integrations (idle/suspend/session
-events), then distribution (AUR packaging, systemd unit). The detailed
-phase list lives in the project's planning documents; nothing shipped
-today depends on unshipped features.
+events), then distribution (AUR packaging, systemd unit). These planned
+features are not required by the shipped locker.
 
 ## License
 

@@ -36,11 +36,11 @@ Bundled themes:
 
 | Theme | Look | Topic preference |
 |---|---|---|
-| `Macintosh.qml` (default) | Centered date + large frosted clock top; name/field bottom (d45: no avatar), over video | none |
+| `Macintosh.qml` (default) | Centered date + large frosted clock top; name/field bottom, over video | none |
 | `Windows7.qml` | Faithful qylock `windows_7` adaptation: centered glass-framed square avatar, field + attached arrow, Switch User and full footer bar | none |
-| `MaterialYou.qml` | Faithful qylock `material-you` light-variant composition: stacked clock + date pill, QUICK SETTINGS grid, notification-style auth card. d45: the tonal palette rotates to the video's sensed accent hue (static lavender when unsensed) | none |
-| `Enfield.qml` | Faithful qylock `enfield`: Orbitron clock top-left, line-dot divider, standalone password pill with star mask + glowing star caret, footer. d45: the sakura accent tier (divider/caret/submit/petals/atmosphere) follows the video's sensed accent hue | `mountain`, `mountains` |
-| `Clockwork.qml` | Faithful qylock `orbital`: two numbered minute/second scales cropped at the left edge, reading pill + hour + date, top-right action strip, right-aligned auth. d45: reference gray tier brightened + text shadows for bright-video contrast (recorded palette deviation) | none |
+| `MaterialYou.qml` | qylock `material-you` light-variant composition: stacked clock + date pill, QUICK SETTINGS grid, notification-style auth card. The tonal palette follows the video's sensed accent hue (static lavender when unsensed) | none |
+| `Enfield.qml` | qylock `enfield`: Orbitron clock top-left, line-dot divider, password pill with star mask + glowing star caret, footer. The sakura accent tier follows the video's sensed accent hue | `mountain`, `mountains` |
+| `Clockwork.qml` | qylock `orbital`: two numbered minute/second scales cropped at the left edge, reading pill + hour + date, top-right actions, right-aligned auth. Brighter grays and text shadows improve contrast over video | none |
 
 The four qylock-derived themes adapt `Darkkal44/qylock` @ `f6561e2` (GPLv3;
 `material-you`'s metadata separately declares MIT) — see
@@ -116,7 +116,7 @@ Shared building blocks you can import from `root:/Modules/Lock`:
   for focus styling. Character-presentation inputs (all optional, all
   default-preserving): `textColor`, `selectionColor`, `selectedTextColor`,
   `fontPixelSize`, `maskCharacter` (construction-time; empty keeps Qt's
-  platform glyph), and (d44) `fontFamily`, `fontWeight`,
+  platform glyph), and `fontFamily`, `fontWeight`,
   `fontLetterSpacing`, `horizontalAlignment`, `cursorDelegate` (a draw-only
   custom caret; the native editor still positions it). Behavior tunings:
   `initialSpacePolicy`, `initialSpaceScope` (see "Initial-space tunings").
@@ -125,7 +125,7 @@ Shared building blocks you can import from `root:/Modules/Lock`:
   takes. Never reach into its internal TextInput.
 - **`Avatar`** — local `$HOME/.face` when it loads, drawn
   initials/person fallback otherwise. Inputs: `source`, `loginName`,
-  `diameter`, `fallbackFill`, `foreground`, and (d44) `cornerRadius` —
+  `diameter`, `fallbackFill`, `foreground`, and `cornerRadius` —
   negative (the default) keeps the circle; a value in px rounds the image,
   initials and person fallback identically (used by Windows7's square
   crop).
@@ -157,7 +157,7 @@ request. Reserve styled text for literal theme-owned markup only.
 | `responseVisible` | bool | The active PAM prompt requests visible input. False outside a live response request, including retries after failure or timeout. |
 | `maxResponseSize` | int | PAM response limit; cap input at `maxResponseSize - 1` (AuthField does) |
 | `dismissAvailable` | bool | Debug dismiss is enabled in this build (build-gated) |
-| `submit()` | function | **The only unlock path** — submits the shared draft held in `auth.input` (zero arguments; a widget never supplies a password) |
+| `submit()` | function | The authenticated submission path — submits the shared draft held in `auth.input` (zero arguments; a widget never supplies a password) |
 | `dismiss()` | function | Debug dismiss — no-op unless `dismissAvailable` |
 
 ### `context.auth.input`
@@ -234,7 +234,7 @@ LockModule.AuthField {
 | `path` | string | Currently playing file |
 | `position` / `duration` | real | Seconds |
 | `hasVideo` | bool | A frame is on screen |
-| `accent` | color | d45: the frame's sensed prominent color, re-derived once per track (hue-bucketed histogram of a downscaled frame grab; saturated mid-tones win). `transparent` when unsensed — no video, gray/dark frame, or grab failure — so themes must keep a static fallback palette. Changes crossfade over 600 ms. |
+| `accent` | color | The frame's sensed prominent color, re-derived once per track (hue-bucketed histogram of a downscaled frame grab; saturated mid-tones win). `transparent` when unsensed — no video, gray/dark frame, or grab failure — so themes must keep a static fallback palette. Changes crossfade over 600 ms. |
 
 ### `context.poi`
 
@@ -291,6 +291,17 @@ surface; with none left it waits without clearing the draft or restarting
 PAM/theme/source inventory. `backdrop` is cleared before the theme crosses
 windows and then set to the new surface's scenery, so a theme must tolerate
 `backdrop` changing (or being null) during the lock.
+
+Fallback settlement cancels incubation and releases the failed candidate.
+Perpetual animations should follow effective visibility, including custom
+carets, so hidden or parked content does not keep animating. Avatar imagery is
+decoded at displayed size × output DPR; reusable image components should bound
+external-file decode at their own display boundary.
+
+The input core handles Qt editing/composition events, but that is not a promise
+that a platform IME's candidate windows work on lock surfaces. Stock Fcitx has
+a known limitation for visible-echo PAM prompts; see the README before enabling
+input methods for password fields.
 
 ## Topic preference
 

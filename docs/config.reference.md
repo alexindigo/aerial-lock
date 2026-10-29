@@ -26,10 +26,11 @@ fields keep their defaults.
 | `language`         | string  | `"en"`           | I18n language (`en.json`, future `ru.json`)    |
 | `backgroundColor`  | string  | `"#000000"`      | Solid color when no video. CSS hex.            |
 | `theme`            | string  | `"Macintosh.qml"`| Whole-surface theme filename (see below).      |
-| `sources`          | array   | `[]`             | Video sources, played in list order (see below). Needs the MpvQml plugin. |
+| `sources`          | array   | `[]`             | Video sources, played in list order (see below). Requires qt6-mpvqml ≥ 0.2.0. |
 | `preferredResolution` | number | *(absent)*    | `1080` or `2160`. Optional and **not** in the bundle defaults — absence is the signal. See "Resolution" below. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
-| `fallbackQuitMs`   | number  | `3000`           | Force-quit after unlock if compositor ack fails|
+| `fallbackQuitMs`   | number  | `3000`           | Retry the explicit quit after unlock if the first deferred quit does not complete. |
+| `pamWatchdogTimeoutMs` | number | `60000`       | Abort an unresponsive PAM attempt after this interval; keep the lock engaged and allow a fresh attempt. |
 
 ### `sources` (array)
 
@@ -38,7 +39,7 @@ behind the panel:
 
 ```json
 "sources": [
-  { "type": "file",      "name": "One clip",       "source": "/tmp/blue.mp4" },
+  { "type": "file",      "name": "One clip",       "source": "~/Videos/blue.mp4" },
   { "type": "folder",    "name": "Personal",       "source": "~/Videos/locker" },
   { "type": "apple",     "name": "Apple TV",       "source": "https://sylvan.apple.com/Aerials/resources-16.tar" },
   { "type": "community", "name": "Community 2026", "source": "https://aerialscreensaver.github.io/community-2026" }
@@ -65,11 +66,11 @@ sanitized: spaces become `-`, anything outside `[A-Za-z0-9._-]` is stripped.
 Two sources sanitizing to the same name → the later one is dropped with a
 warning.
 
-**Migration from d32/d35 configs:** on first launch with an old config that
+**Migration from legacy configs:** on first launch with an old config that
 has `video`, `videoDir`, or `apple` but no `sources`, those keys are
 rewritten into `sources` entries (`video` → `file`, `videoDir` → `folder`,
 `apple.enabled: true` → the Apple pack) and removed from your
-`config.json`. Note the d35 cache lived at `…/aerial-lock/apple/`; the
+`config.json`. The legacy Apple cache lived at `…/aerial-lock/apple/`; the
 migrated Apple source caches at `…/aerial-lock/Apple-TV/` — rename the old
 directory if you want to keep the already-downloaded clips.
 
@@ -167,6 +168,12 @@ and writes nothing.
 
 ## Known limitations
 
+- Stock Fcitx candidate popups on visible-echo PAM prompts can disconnect the
+  locker; keep password input methods disabled and use the plain keyboard
+  method for those prompts. Long video locks have shown approximately 19 MB/h
+  RSS growth under continuous track changes. Nested Hyprland synthetic input
+  also has coverage limits. See [README known limitations](../README.md#known-limitations)
+  for symptoms and workarounds.
 - **No PAM account-management phase.** Quickshell's `PamContext` runs
   `pam_authenticate` only, so interactive account-management flows (e.g. an
   expired password's "new password/retype" prompt) are unreachable — identical

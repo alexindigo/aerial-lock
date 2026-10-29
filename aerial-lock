@@ -1,6 +1,6 @@
 #!/bin/sh
 # aerial-lock launches the supervisor, which owns the locker lifecycle:
 # launches the shared guarded runner, respawns on abnormal death (limit 3),
-# then stays locked and reports the failure. Set AERIAL_LOCK_SHELL to point it at
+# then reports whether guard protection failed or recovery is needed. Set AERIAL_LOCK_SHELL to point it at
 # a different shell directory during development.
 exec aerial-lock-supervisor "$@"

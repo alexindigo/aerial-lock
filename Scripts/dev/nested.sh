@@ -8,18 +8,19 @@ set -euo pipefail
 # Launches a nested niri or Hyprland as a window inside the running
 # session, with the aerial-lock test binds pre-wired:
 #
-#   Mod+L              launch aerial-lock from this repo
-#   Mod+Shift+Escape   kill the aerial-lock locker (works while locked)
+#   Mod+L              launch the guarded dev runner from this repo
+#   Mod+Shift+Escape   niri's crash-test bind (does not unlock)
 #   Mod+Shift+Q        quit the nested compositor (niri; when unlocked)
 #
-# (niri only allows spawn binds to fire while locked, so the escape kills
-# the locker; Hyprland's bindl exit quits the compositor in one press.)
+# (niri only allows spawn binds to fire while locked. Its crash-test bind
+# does NOT unlock; Hyprland's bindl exit closes the nested compositor.)
 #
 # --outputs N  (hyprland only) adds N-1 headless fake outputs after
 # startup, for multi-monitor testing without physical displays.
 #
-# The nested session is a sandbox: getting stuck means closing a window,
-# never a lockout. Note the nested niri is started WITHOUT --session:
+# Run in a disposable test VM. A secure lock remains locked after its client
+# dies; use normal authentication or close only the owned nested compositor.
+# The nested niri is started WITHOUT --session:
 # --session would import the nested environment into the host's systemd
 # and D-Bus and clobber WAYLAND_DISPLAY for newly-launched host apps.
 

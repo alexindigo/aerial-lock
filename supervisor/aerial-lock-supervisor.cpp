@@ -2,7 +2,7 @@
  * aerial-lock-supervisor — owns the locker lifecycle; respawn-only recovery.
  *
  * Long-lived child process (the aerial-lock launcher): spawns the locker,
- * respawns it up to three times on abnormal death, and — when respawns run
+ * retries within three total attempts on abnormal death, and — when attempts run
  * out — reports failure without claiming an unavailable guard locked the
  * session. There is NO automatic unlock
  * anywhere: no path from "at the lock screen" to "inside the session" that

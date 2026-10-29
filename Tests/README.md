@@ -1,13 +1,32 @@
-# QML suites
+# Testing aerial-lock
 
-Run in the project's authorized test VM, with a disk-backed `TMPDIR`:
+Build and test in a disposable VM with the runtime/build dependencies from the
+README, including installed **qt6-mpvqml ≥ 0.2.0**. Use a disk-backed workspace
+and temporary directory. The commands below run inside that guest from the
+repository root:
+
+```sh
+mkdir -p "$HOME/aerial-test/tmp"
+export TMPDIR="$HOME/aerial-test/tmp"
+export LIBGL_ALWAYS_SOFTWARE=1 QSG_RHI_BACKEND=opengl
+make DEBUG_DISMISS=0 DEBUG_VERBOSE=0
+```
+
+## Portable checks
+
+```sh
+bash Scripts/dev/qmllint.sh .
+node --test Tests/theme-selection.test.cjs Tests/theme-attribution.test.cjs
+```
+
+### QML suites
 
 ```sh
 QT_QPA_PLATFORM=offscreen QSG_RHI_BACKEND=opengl LIBGL_ALWAYS_SOFTWARE=1 \
-  /usr/lib/qt6/bin/qmltestrunner -import Tests/imports -input Tests/tst_theme_host.qml
+  /usr/lib/qt6/bin/qmltestrunner -import Tests/imports -input Tests
 ```
 
-The same invocation supports every `Tests/tst_*.qml` suite. The test-only
+Use `-input Tests/tst_theme_host.qml` to select just one suite. The test-only
 `imports/Quickshell` modules let standalone QtTest load ThemeHost's types
 without Quickshell's executable-linked plugins. They supply only its inactive
 I/O boundary; any environment or file access throws. The handoff suite loads
@@ -17,9 +36,11 @@ IME handling belongs to the native input probe; real theme discovery and
 Quickshell loading belong to the nested-shell camera gate.
 
 The accent-sampler suite writes its frame files into `TMPDIR`; point it at a
-disposable directory.
+disposable directory. Auth-input tests fail on warnings, and destroy consumers
+before their context. Theme fidelity includes a markup-bearing PAM message on
+all five themes and the fallback; glyph layout must match plain-text rendering.
 
-# Native tests
+### Native tests
 
 ```sh
 cmake -S Tests -B build/aerial-tests -G Ninja -DAERIAL_LOCK_SOURCE="$PWD"
@@ -29,11 +50,12 @@ ctest --test-dir build/aerial-tests --output-on-failure
 
 Run `make` first: `supervisor-session` uses the built supervisor. The portable
 set covers native input and editor migration, the BLOCKED latch, supervisor
-session scoping, media-failure fallback (an injected core failure) and the
-output-selection policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the
+session scoping, pre-engagement/monitor/mixed supervisor outcomes, literal shell
+operands, incremental build configuration, media-failure fallback (an injected
+core failure) and output-selection policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the
 `owned-instance` regression for a prepared VM (below).
 
-# VM integration drivers
+## Real-session integration drivers
 
 `run-remediation.sh` (→ `remediation-driver.py`), `launch-integration.py` and
 `nested-launch-integration.py` run real locks with real PAM inside owned nested
@@ -43,7 +65,8 @@ never run on a desktop session. Every run takes `--root <workspace>` and
 
 Workspace layout under the root: `src/aerial-lock` (the tree under test),
 `build/debug/aerial-tests` (the CMake build above), `stage` (`make install
-DESTDIR=<root>/stage`), `run`, `results`, `media`.
+DESTDIR=<root>/stage`), `run`, `results`, `media`. `ROOT` below names that
+disk-backed guest workspace and `VM_RECORD` its operator-produced manifest.
 
 ```sh
 bash Tests/run-remediation.sh --root "$ROOT" --lane debug --vm-record "$VM_RECORD" \
@@ -66,6 +89,10 @@ events and from real platform IME composition. Passwords reach the locker only
 through stdin of the input tool; protocol traffic is filtered before anything
 is written to disk.
 
+Stock Fcitx visible-echo candidate popups and nested Hyprland synthetic input
+remain limitations (README). A portable native-input probe exercises injected
+Qt IME events, not a real platform candidate popup. Do not conflate those results.
+
 A failed locker that is still running is never killed: the driver writes a
 `run/BLOCKED.json` / `run/blocked-qs-*.json` latch, keeps its compositor and
 refuses later runs until someone inspects it. `--recover-owned-failures` allows
@@ -84,6 +111,19 @@ preload libraries; the product has no fault or debug-exit setting.
 `sampling-scale` checks the original budgets (RSS ≤ 1 GiB, FDs < 75 % of the
 limit, MemAvailable ≥ 25 %), that the private frame directory never holds more
 files than there are outputs, and that the shared `/tmp` is unchanged.
+
+`launch-integration.py --root "$ROOT" --vm-record "$VM_RECORD"` checks the
+staged installed supervisor, same-PID runner, real-PAM unlock and failed starts
+(missing runner/plugin, arming and monitor faults). `--stage` can select a second
+install prefix inside the workspace. `nested-launch-integration.py` checks the
+development template with `--backend niri --vm-key` (emulated guest keyboard)
+or `--backend hyprland --ipc-control` (compositor spawn path, not native keys).
+
+Prepare authentication fixtures only in the disposable guest. Save original
+credentials root-only before changing them, pass fixture secrets through stdin,
+and restore the original credentials byte-for-byte afterwards. Do not persist
+passwords or unfiltered protocol traces in evidence. Capture full screenshots
+from the nested compositor into the guest's disk-backed artifact directory.
 
 ## Owned manifest
 
