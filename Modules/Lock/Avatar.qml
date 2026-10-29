@@ -86,6 +86,10 @@ Item {
         source: root.source.length > 0 ? "file://" + root.source : ""
         asynchronous: true
         cache: false
+        // Decode user imagery only at its displayed physical-pixel size.
+        // This also follows resizing and moves between differently scaled outputs.
+        sourceSize: Qt.size(Math.max(1, Math.ceil(width * Screen.devicePixelRatio)),
+                            Math.max(1, Math.ceil(height * Screen.devicePixelRatio)))
         fillMode: Image.PreserveAspectCrop
         visible: status === Image.Ready
 

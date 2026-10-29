@@ -24,6 +24,20 @@ Item {
         name: "AvatarShape"
         when: windowShown
 
+        function test_decode_follows_display_size() {
+            var path = Qt.resolvedUrl("fixtures/avatar-large.svg").toString().replace(/^file:\/\//, "")
+            var a = createTemporaryObject(avatarComponent, root, { "source": path })
+            var image = findByPredicate(a, function (it) { return it.sourceSize !== undefined })
+            verify(image !== null)
+            tryCompare(image, "status", Image.Ready)
+            compare(image.sourceSize.width, Math.ceil(a.width * image.Screen.devicePixelRatio))
+            compare(image.sourceSize.height, Math.ceil(a.height * image.Screen.devicePixelRatio))
+            a.width = 48
+            a.height = 72
+            tryCompare(image, "sourceSize", Qt.size(Math.ceil(48 * image.Screen.devicePixelRatio),
+                                                   Math.ceil(72 * image.Screen.devicePixelRatio)))
+        }
+
         function test_default_is_circular() {
             var a = createTemporaryObject(avatarComponent, root, { "loginName": "Test User" })
             compare(a.effectiveRadius, a.width / 2, "default remains circular")
