@@ -30,3 +30,11 @@ target_link_libraries(guard-logger-trap PRIVATE Qt6::Core ${CMAKE_DL_LIBS})
 add_test(NAME supervisor-session
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-supervisor-session.py"
             "${AERIAL_LOCK_SOURCE}/supervisor/aerial-lock-supervisor")
+pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
+add_library(full-caller-faults SHARED full-caller-faults.c)
+target_link_libraries(full-caller-faults PRIVATE PkgConfig::MPV pthread ${CMAKE_DL_LIBS})
+find_program(QMLTESTRUNNER qmltestrunner PATHS /usr/lib/qt6/bin /usr/lib64/qt6/bin REQUIRED)
+add_test(NAME media-fallback
+    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml")
+set_tests_properties(media-fallback PROPERTIES ENVIRONMENT
+    "LD_PRELOAD=$<TARGET_FILE:full-caller-faults>;AERIAL_TEST_FULL_CALLER_FAULT=core-create;QT_QPA_PLATFORM=offscreen")

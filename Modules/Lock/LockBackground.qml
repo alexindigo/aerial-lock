@@ -14,6 +14,9 @@ Item {
     // mpv (error + advance), never a crash.
     property var items: []
     property bool stopped: false
+    // Native media failure (core or renderer) is final for this background:
+    // the surface keeps its solid colour and authentication is unaffected.
+    property bool mediaFailed: false
     // Injected by Lock: the locker's private runtime directory for frame
     // grabs, and whether this background's accent is the consumed one.
     property string frameDirectory: ""
@@ -53,11 +56,18 @@ Item {
     }
     Component.onDestruction: shutdown()
 
+    // The player reports the failure itself (errorOccurred → loadFailed);
+    // this only retires the scenery so it is reported once.
+    function mediaFailure() {
+        mediaFailed = true
+        sampler.shutdown()
+    }
+
     // Single drive point: the parent assigns items after
     // Component.onCompleted, so loading hangs off the property change,
     // not construction.
     function applySource() {
-        if (stopped || items.length === 0)
+        if (stopped || mediaFailed || items.length === 0)
             return
         var first = true
         for (var i = 0; i < items.length; i++) {
@@ -87,7 +97,9 @@ Item {
         id: player
         anchors.fill: parent
         enabled: false            // keys stay on the password field
-        visible: hasVideo         // solid surface color until a frame exists
+        // Native readiness must be allowed before loading yields hasVideo.
+        // The renderer's blank target exposes the solid surface until then.
+        visible: !root.stopped && !root.mediaFailed
         mute: true
         fillMode: "preserveAspectCrop"
         // A lone file loops seamlessly (loopFile); anything else is a
@@ -99,5 +111,7 @@ Item {
         onErrorOccurred: function (code, message) {
             root.loadFailed(message)
         }
+        onInitializationFailed: root.mediaFailure()
+        onRenderingFailed: root.mediaFailure()
     }
 }
