@@ -163,9 +163,13 @@ Two separate questions: does the compositor implement
 | GNOME / Mutter   | No        | —           |
 
 The password panel is placed on the compositor's focused output when that
-name matches a real screen (`NIRI_SOCKET` → niri, `HYPRLAND_INSTANCE_SIGNATURE`
-→ hyprland). If neither env var is set, the backend module fails to load, or
-the name matches no screen, the panel goes on `screens[0]` — never nowhere.
+name matches a usable lock surface (`NIRI_SOCKET` → niri,
+`HYPRLAND_INSTANCE_SIGNATURE` → hyprland). Otherwise it goes on the first usable
+lock surface. The selection stays pinned while that surface exists. If it is
+removed, the same theme and editor move to a surviving output without clearing
+the typed text or selection and without restarting PAM; if no lock surface is
+left, the editor waits until one returns. Hyprland's own `FALLBACK` output is a
+real lock surface and receives the editor.
 
 Recovery from a crashed locker is compositor **policy**, not a protocol
 guarantee: `ext-session-lock-v1` says a compositor *may* let a new client

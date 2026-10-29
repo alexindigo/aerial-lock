@@ -234,11 +234,15 @@ from a compositor backend if one is present:
 
 - `NIRI_SOCKET` set → niri (`NiriState.activeOutput`)
 - `HYPRLAND_INSTANCE_SIGNATURE` set → Hyprland (`Hyprland.focusedMonitor.name`)
-- otherwise, or if the backend fails to load, or if the name is not in
-  `Quickshell.screens` → `screens[0]`, with a warning in the last case
+- otherwise, or if the backend fails to load, or if the name has no usable
+  lock surface → the first usable lock surface, with a warning in the last case
 
 There is no config key to pick a screen. A wrong name must not hide the
-panel.
+panel. The selected surface stays pinned until it disappears; the same
+theme/editor then moves to a survivor, preserving the draft, selection and PAM
+state. With no usable lock surface it waits and recovers when a surface returns.
+Hyprland's real `FALLBACK` output is usable; Qt's placeholder screen is not a
+lock surface by itself.
 
 ## Debug / development
 

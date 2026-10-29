@@ -30,6 +30,20 @@ Item {
     readonly property bool settled: internal.settled
     readonly property var preferredTopics: internal.topics
 
+    // QObject ownership stays with Lock's Scope; only visual attachment moves.
+    // Clear the old backdrop before crossing windows, including equal geometry.
+    function attachTo(attachment, scenery) {
+        if (root.parent === attachment) {
+            root.backdrop = scenery || null
+            return
+        }
+        root.backdrop = null
+        root.parent = attachment
+        root.backdrop = scenery || null
+        if (attachment)
+            Qt.callLater(root.focusInput)
+    }
+
     QtObject {
         id: internal
         property bool complete: false

@@ -43,6 +43,14 @@ Scope {
     property bool themeFallbackPinned: false
     property bool themeTopicsSet: false
 
+    // Output failover: every lock surface registers {surface, screen,
+    // attachment (its content item), background}. The panel output is
+    // selected among *usable* registrations — a registered surface whose
+    // screen is still in Quickshell.screens — and stays pinned while it
+    // exists. A nonempty screen list alone does not prove a lock surface.
+    property var surfaceRecords: []
+    property bool tearingDown: false
+
     // Video background resolution (d36/d40): SourceCache publishes ONE
     // frozen playlist per lock after its nonblocking inventory resolves
     // (theme topics applied, 2000 ms deadline). Solid background while it
@@ -52,6 +60,16 @@ Scope {
     // dependency (README).
     readonly property var bgItems: sourceCache.playlist
     readonly property bool hasBackground: sourceCache.resolved && bgItems.length > 0
+    readonly property var selectedSurface: {
+        var usable = root.usableSurfaces()
+        for (var i = 0; i < usable.length; i++) {
+            if (usable[i].screen.name === root.panelScreenName)
+                return usable[i]
+        }
+        return null
+    }
+    // The one producer of the shared video/accent presentation.
+    readonly property var selectedBackground: selectedSurface ? selectedSurface.background : null
     // Private per-locker runtime directory created by the launch wrapper
     // (Scripts/aerial-lock-run). Frame grabs never fall back to /tmp:
     // without it, accent sensing is simply off.
@@ -125,6 +143,19 @@ Scope {
     Binding { target: lockContext.labels; property: "dismissDebug"; value: i18n.dismissDebug || "Dismiss (debug)" }
     Binding { target: lockContext.labels; property: "unlocked"; value: i18n.unlocked || "Unlocked" }
 
+    // Video playback export for LockContext — exactly one producer, the
+    // selected surface's background (null when there is none).
+    //
+    // qmllint disable missing-property
+    // selectedBackground is the dynamically loaded LockBackground.qml,
+    // which defines these — dynamic by design, qmllint cannot see it.
+    Binding { target: lockContext.video; property: "position"; value: root.selectedBackground ? root.selectedBackground.position : 0 }
+    Binding { target: lockContext.video; property: "duration"; value: root.selectedBackground ? root.selectedBackground.duration : 0 }
+    Binding { target: lockContext.video; property: "hasVideo"; value: root.selectedBackground ? root.selectedBackground.hasVideo : false }
+    Binding { target: lockContext.video; property: "path"; value: root.selectedBackground ? root.selectedBackground.currentFilename : "" }
+    Binding { target: lockContext.video; property: "accent"; value: root.selectedBackground ? root.selectedBackground.accentColor : "transparent" }
+    // qmllint enable missing-property
+
     Connections {
         target: lockContext.video
         function onPathChanged() { root.updateVideoInfo(lockContext.video.path) }
@@ -184,43 +215,130 @@ Scope {
         }
     }
 
+    // d40: the configured whole-surface theme (or the built-in panel as
+    // ThemeHost's fallback). Untrusted QML is never the surface component:
+    // the host is owned by this Scope (QObject parent) and only its visual
+    // parent moves, through attachTo(), into the selected trusted surface.
+    // One theme/editor instance for the whole lock, so moving outputs keeps
+    // the draft, selection, composition and PAM conversation.
+    ThemeHost {
+        id: themeHost
+        parent: null
+        anchors.fill: parent
+        visible: parent !== null
+        enabled: visible
+        focus: visible
+        context: lockContext
+        config: root.config
+        logger: root.logger
+        allowLoading: sessionLock.secure && root.locked
+        fallbackPinned: root.themeFallbackPinned
+        onFallbackRequested: root.themeFallbackPinned = true
+        onReady: root.publishThemeTopics()
+    }
+
+    onSelectedSurfaceChanged: attachPanel()
+    onSelectedBackgroundChanged: attachPanel()
+
+    // Scenery-only backdrop for themes that declare a `backdrop` property:
+    // the selected surface's background, null when the video background is
+    // inactive — themes must tolerate that.
+    function attachPanel() {
+        if (root.tearingDown)
+            return
+        var selected = root.selectedSurface
+        themeHost.attachTo(selected ? selected.attachment : null, root.selectedBackground)
+        root.publishThemeTopics()
+    }
+
+    // d40: the theme's topic preference is known once its content is loaded
+    // (fallback panel: none). Start the inventory then — its snapshot is
+    // frozen per lock and gates the background.
+    function publishThemeTopics() {
+        if (!sessionLock.secure || !themeHost.settled || root.themeTopicsSet)
+            return
+        root.themeTopicsSet = true
+        sourceCache.topics = themeHost.preferredTopics
+        sourceCache.begin()
+    }
+
     Compositor {
         id: compositor
     }
 
-    function resolvePanelScreen() {
-        var screens = Quickshell.screens
-        if (!screens || screens.length === 0)
-            return ""
-        if (screens.length === 1)
-            return screens[0].name
-        var focused = compositor.focusedOutputName
-        if (focused && focused.length > 0) {
-            for (var i = 0; i < screens.length; i++) {
-                if (screens[i].name === focused)
-                    return focused
+    function usableSurfaces() {
+        var result = []
+        var screens = Quickshell.screens || []
+        for (var i = 0; i < root.surfaceRecords.length; i++) {
+            var record = root.surfaceRecords[i]
+            if (!record.screen || !record.attachment)
+                continue
+            for (var j = 0; j < screens.length; j++) {
+                if (screens[j] === record.screen) {
+                    result.push(record)
+                    break
+                }
             }
-            logger.w("aerial-lock", "focused output \"" + focused
-                     + "\" does not match any known screen; using "
-                     + screens[0].name)
         }
-        return screens[0].name
+        return result
     }
 
-    function tryResolvePanel() {
-        if (root.panelScreenName !== "")
+    function registerSurface(surface, screen, attachment, background) {
+        if (root.tearingDown)
             return
-        if (compositor.focusedOutputName !== "") {
-            root.panelScreenName = root.resolvePanelScreen()
+        var records = root.surfaceRecords.filter(function (record) { return record.surface !== surface })
+        records.push({ surface: surface, screen: screen, attachment: attachment, background: background })
+        root.surfaceRecords = records
+        root.tryResolvePanel()
+    }
+
+    function unregisterSurface(surface) {
+        if (root.tearingDown)
             return
+        root.surfaceRecords = root.surfaceRecords.filter(function (record) { return record.surface !== surface })
+        root.reconcilePanel(true)
+    }
+
+    // The compositor's focused output when it is a usable surface, else the
+    // first usable surface — never a screen without a lock surface. "" parks
+    // the editor until a surface registers.
+    function resolvePanelScreen() {
+        var records = root.usableSurfaces()
+        var focused = compositor.focusedOutputName
+        for (var i = 0; i < records.length; i++) {
+            if (records[i].screen.name === focused)
+                return focused
         }
-        if (!compositor.backendReady)
+        if (focused && focused.length > 0 && records.length > 0)
+            logger.w("aerial-lock", "focused output \"" + focused
+                     + "\" has no usable lock surface; using " + records[0].screen.name)
+        return records.length ? records[0].screen.name : ""
+    }
+
+    function reconcilePanel(immediate) {
+        if (root.tearingDown)
             return
-        if (compositor.backendName === "none") {
-            root.panelScreenName = root.resolvePanelScreen()
-            return
+        var records = root.usableSurfaces()
+        for (var i = 0; i < records.length; i++) {
+            if (records[i].screen.name === root.panelScreenName)
+                return // keep the selected usable surface pinned
         }
-        resolveGrace.restart()
+        var hadSelection = root.panelScreenName !== ""
+        if (hadSelection || immediate || compositor.focusedOutputName !== "" || compositor.backendName === "none") {
+            resolveGrace.stop()
+            root.panelScreenName = root.resolvePanelScreen()
+        } else if (compositor.backendReady) {
+            // Give the compositor backend a moment to report focus.
+            resolveGrace.restart()
+        }
+        root.attachPanel()
+    }
+
+    function tryResolvePanel() { root.reconcilePanel(false) }
+
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { root.reconcilePanel(true) }
     }
 
     Timer {
@@ -228,8 +346,8 @@ Scope {
         interval: 50
         repeat: false
         onTriggered: {
-            if (root.panelScreenName === "")
-                root.panelScreenName = root.resolvePanelScreen()
+            root.panelScreenName = root.resolvePanelScreen()
+            root.attachPanel()
         }
     }
 
@@ -279,7 +397,16 @@ Scope {
             id: lockSurface
             color: config.data.backgroundColor
 
-            // Video background (d32) — behind LockContent (first child
+            property bool complete: false
+            function register() {
+                if (complete)
+                    root.registerSurface(lockSurface, lockSurface.screen, lockSurface.contentItem, bgLoader.item)
+            }
+            Component.onCompleted: { complete = true; register() }
+            onScreenChanged: register()
+            Component.onDestruction: root.unregisterSurface(lockSurface)
+
+            // Video background (d32) — behind the theme (first child
             // paints last-on-bottom). Never eager: active stays false when
             // no source is configured, so libmpv is not started for
             // nothing. This is resource isolation, not plugin-optionality:
@@ -298,17 +425,21 @@ Scope {
                     // Loader.item is typed QObject; the loaded item is
                     // LockBackground.qml, which defines the loadFailed
                     // signal — dynamic by design, qmllint cannot see it.
-                    // Only the panel surface's accent is consumed.
-                    item.frameDirectory = root.frameDirectory
-                    item.samplingActive = Qt.binding(function () { return lockSurface.hostsPanel })
                     item.loadFailed.connect(function (message) {
                         root.logger.w("aerial-lock", "video background failed: " + message)
                     })
+                    // Only the consumed (selected) background samples accents.
+                    item.frameDirectory = root.frameDirectory
+                    item.samplingActive = Qt.binding(function () {
+                        return bgLoader.item !== null && root.selectedBackground === bgLoader.item
+                    })
                     // qmllint enable missing-property
+                    lockSurface.register()
                 }
                 onStatusChanged: {
                     if (status === Loader.Error)
                         root.logger.w("aerial-lock", "video background unavailable — solid color")
+                    lockSurface.register()
                 }
             }
 
@@ -324,82 +455,6 @@ Scope {
                     // qmllint enable missing-property
                 }
             }
-
-            readonly property bool hostsPanel: {
-                if (!Quickshell.screens || Quickshell.screens.length <= 1)
-                    return true
-                return lockSurface.screen
-                       && lockSurface.screen.name === root.panelScreenName
-            }
-
-            // Video playback export for LockContext. These live INSIDE
-            // the surface: ids are visible only in the subtree of their
-            // declaring object, so bgLoader is unreachable from root.
-            //
-            // qmllint disable missing-property
-            // bgLoader.item is typed QObject; the loaded item is
-            // LockBackground.qml, which defines these — dynamic by design.
-            Binding { target: lockContext.video; property: "position"; value: bgLoader.item ? bgLoader.item.position : 0 }
-            Binding { target: lockContext.video; property: "duration"; value: bgLoader.item ? bgLoader.item.duration : 0 }
-            Binding { target: lockContext.video; property: "hasVideo"; value: bgLoader.item ? bgLoader.item.hasVideo : false }
-            Binding { target: lockContext.video; property: "path"; value: bgLoader.item ? bgLoader.item.currentFilename : "" }
-            Binding { target: lockContext.video; property: "accent"; value: bgLoader.item ? bgLoader.item.accentColor : "transparent" }
-            // qmllint enable missing-property
-
-            // Coverage confirmation starts optional theme work; window
-            // activation remains the separate keyboard-focus backstop.
-            Connections {
-                target: sessionLock
-                function onSecureStateChanged() {
-                    if (sessionLock.secure && lockSurface.hostsPanel) {
-                        themeHost.focusInput()
-                        lockSurface.publishThemeTopics()
-                    }
-                }
-            }
-
-            // d40: the theme's topic preference is known once its content
-            // is loaded (fallback panel: none). Start the inventory then —
-            // its snapshot is frozen per lock and gates the background.
-            function publishThemeTopics() {
-                if (!sessionLock.secure || !lockSurface.hostsPanel || !themeHost.settled || root.themeTopicsSet)
-                    return
-                root.themeTopicsSet = true
-                sourceCache.topics = themeHost.preferredTopics
-                sourceCache.begin()
-            }
-
-            onHostsPanelChanged: publishThemeTopics()
-
-            Connections {
-                target: themeHost
-                function onReady() {
-                    lockSurface.publishThemeTopics()
-                }
-            }
-
-            // d40: the configured whole-surface theme (or the built-in
-            // panel as ThemeHost's fallback) lives INSIDE the trusted
-            // surface — untrusted QML is never the surface component.
-            ThemeHost {
-                id: themeHost
-                anchors.fill: parent
-                visible: lockSurface.hostsPanel
-                enabled: lockSurface.hostsPanel
-                focus: lockSurface.hostsPanel
-                context: lockContext
-                config: root.config
-                logger: root.logger
-                allowLoading: sessionLock.secure && root.locked && lockSurface.hostsPanel
-                fallbackPinned: root.themeFallbackPinned
-                onFallbackRequested: root.themeFallbackPinned = true
-            }
-
-            // Scenery-only backdrop export for themes that declare a
-            // `backdrop` property. bgLoader's id is visible only in this
-            // surface subtree, so the binding lives here. Null when the
-            // video background is inactive — themes must tolerate that.
-            Binding { target: themeHost; property: "backdrop"; value: bgLoader.item }
         }
     }
 
@@ -510,6 +565,8 @@ Scope {
     }
 
     Component.onDestruction: {
+        // Surfaces unregister while the tree is torn down; never migrate then.
+        root.tearingDown = true
         root.attemptCancelled = true
         pam.abort()
     }
@@ -518,6 +575,12 @@ Scope {
         target: sessionLock
         function onSecureStateChanged() {
             logger.d("Lock", "sessionLock.secure changed: secure=" + sessionLock.secure)
+            // Coverage confirmation starts optional theme work; window
+            // activation remains the separate keyboard-focus backstop.
+            if (sessionLock.secure) {
+                root.publishThemeTopics()
+                Qt.callLater(themeHost.focusInput)
+            }
         }
         function onLockStateChanged() {
             logger.d("Lock", "sessionLock.locked changed: locked=" + sessionLock.locked +

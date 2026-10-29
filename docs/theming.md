@@ -278,6 +278,14 @@ the settle once, never an immediate grab; a sensed, in-flight or exhausted track
 is not sampled again when video availability toggles. Scenery failure leaves
 authentication independent.
 
+The theme/editor is one instance per lock, owned by the lock (not by an output)
+and attached to the selected output's lock surface. The selected output stays
+pinned while its lock surface exists. On removal the theme moves to a surviving
+surface; with none left it waits without clearing the draft or restarting
+PAM/theme/source inventory. `backdrop` is cleared before the theme crosses
+windows and then set to the new surface's scenery, so a theme must tolerate
+`backdrop` changing (or being null) during the lock.
+
 ## Topic preference
 
 A theme's `preferredTopics` biases which configured clips play: the lock

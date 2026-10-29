@@ -329,6 +329,7 @@ Item {
         font.pixelSize: root.fontPixelSize
         echoMode: root.context.auth.responseVisible ? TextInput.Normal : TextInput.Password
         passwordMaskDelay: 0
+        persistentSelection: true
         enabled: !root.context.auth.inProgress
         maximumLength: root.context.auth.maxResponseSize > 0 ? root.context.auth.maxResponseSize - 1 : 32767
         // Declarative focus from construction: forceActiveFocus alone

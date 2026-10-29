@@ -7,6 +7,9 @@
 #include <QFont>
 #include <QQuickView>
 #include <QQuickItem>
+#include <QQmlEngine>
+#include <QQmlComponent>
+#include <QPointer>
 #include <QClipboard>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
@@ -15,9 +18,10 @@
 #include <QJsonObject>
 #include <QTest>
 #include <cstdio>
+#include <memory>
 
 static QObject *rootObj = nullptr;
-static QQuickView *viewPtr = nullptr;
+static QQuickWindow *viewPtr = nullptr;
 static int failures = 0;
 
 static void settle() {
@@ -120,21 +124,107 @@ static void keyDirect(QEvent::Type type, int key, const QString &text, bool auto
 
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
-    QQuickView view;
-    viewPtr = &view;
-    view.setSource(QUrl::fromLocalFile(
-        argc > 1 ? QString::fromUtf8(argv[1]) : QStringLiteral("auth-input-fixture.qml")));
-    if (!view.rootObject()) {
+    const bool migration = argc > 1 && QString::fromUtf8(argv[1]) == QStringLiteral("--migration");
+    QQmlEngine engine;
+    QObject scopeOwner;
+    std::unique_ptr<QQmlComponent> persistentComponent;
+    auto view = std::make_unique<QQuickView>(&engine, nullptr);
+    viewPtr = view.get();
+    const int pathIndex = migration ? 2 : 1;
+    const QUrl source = QUrl::fromLocalFile(
+        argc > pathIndex ? QString::fromUtf8(argv[pathIndex]) : QStringLiteral("auth-input-fixture.qml"));
+    if (migration) {
+        // Match the production Scope's engine/creation-context ownership:
+        // deleting a surface must not destroy the persistent editor's context.
+        persistentComponent = std::make_unique<QQmlComponent>(&engine, source);
+        rootObj = persistentComponent->create();
+        auto *item = qobject_cast<QQuickItem *>(rootObj);
+        if (!item) return 2;
+        item->setParent(&scopeOwner);
+        item->setParentItem(view->contentItem());
+        view->resize(640, 480);
+    } else {
+        view->setSource(source);
+        rootObj = view->rootObject();
+    }
+    if (!rootObj) {
         printf("FATAL: fixture failed to load\n");
-        for (const auto &e : view.errors())
+        for (const auto &e : view->errors())
             printf("  %s\n", e.toString().toUtf8().constData());
         return 2;
     }
-    rootObj = view.rootObject();
-    view.show();
-    (void)QTest::qWaitForWindowExposed(&view);
-    view.requestActivate();
-    (void)QTest::qWaitForWindowActive(&view, 2000);
+    view->show();
+    (void)QTest::qWaitForWindowExposed(view.get());
+    view->requestActivate();
+    (void)QTest::qWaitForWindowActive(view.get(), 2000);
+
+    if (migration) {
+        call("newRig", 1, 0);
+        clicks("prefix");
+        QObject *const editor = focusInput();
+        auto *rig = qobject_cast<QQuickItem *>(rootObj->property("rig").value<QObject *>());
+        QObject *context = rig ? rig->property("context").value<QObject *>() : nullptr;
+        QObject *auth = context ? context->property("auth").value<QObject *>() : nullptr;
+        QObject *model = auth ? auth->property("input").value<QObject *>() : nullptr;
+        expect(editor && rig && model, "migration: production editor/model located");
+        if (!editor || !rig || !model) return 1;
+        QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 5), Q_ARG(int, 2));
+        settle();
+        const int revision = model->property("revision").toInt();
+        const int writer = model->property("activeWriter").toInt();
+        const bool latched = model->property("tuningLatched").toBool();
+        rig->setParent(&scopeOwner); // independent controller ownership, as Lock Scope provides
+        QQuickWindow survivor;
+        survivor.resize(640, 480);
+        survivor.show();
+        (void)QTest::qWaitForWindowExposed(&survivor);
+        rig->setParentItem(survivor.contentItem());
+        viewPtr = &survivor;
+        survivor.requestActivate();
+        (void)QTest::qWaitForWindowActive(&survivor, 2000);
+        QMetaObject::invokeMethod(rig->property("fieldA").value<QObject *>(), "focusField");
+        settle();
+        view.reset(); // old window/subtree is gone; the original editor must survive
+        settle();
+        expect(focusInput() == editor, "migration: identical native editor focused on survivor");
+        expectStr(model->property("text").toString(), "prefix", "migration: committed draft survives old-window destruction");
+        expect(model->property("revision").toInt() == revision, "migration: moving does not hydrate/reset the draft");
+        expect(model->property("activeWriter").toInt() == writer, "migration: writer token retained");
+        expect(model->property("tuningLatched").toBool() == latched, "migration: tuning progress retained");
+        expect(editor->property("cursorPosition").toInt() == 2
+               && editor->property("selectionStart").toInt() == 2
+               && editor->property("selectionEnd").toInt() == 5, "migration: reverse selection retained");
+        ime(QStringLiteral("ni"), QString());
+        expect(fComposing() && fPreedit() == "ni", "migration: native preedit started");
+        // Native IME initiation replaces the selected committed range. Keep
+        // that ordinary edit, then prove migration adds no reset/serialization.
+        const QString committedDuringPreedit = model->property("text").toString();
+        const int composingRevision = model->property("revision").toInt();
+        QQuickWindow next;
+        next.resize(640, 480);
+        next.show();
+        (void)QTest::qWaitForWindowExposed(&next);
+        rig->setParentItem(next.contentItem());
+        viewPtr = &next;
+        next.requestActivate();
+        (void)QTest::qWaitForWindowActive(&next, 2000);
+        QMetaObject::invokeMethod(rig->property("fieldA").value<QObject *>(), "focusField");
+        settle();
+        expect(focusInput() == editor, "migration: composing editor identity retained");
+        expect(fComposing() && fPreedit() == "ni", "migration: native preedit survives cross-window attachment");
+        expectStr(model->property("text").toString(), committedDuringPreedit,
+                  "migration: committed draft unchanged across composing move");
+        expect(model->property("revision").toInt() == composingRevision,
+               "migration: composition move does not rehydrate/reset");
+        expect(!model->property("text").toString().contains("ni"),
+               "migration: preedit not serialized into committed draft");
+        ime(QString(), QString::fromUtf8("\xE3\x81\xAB"));
+        expect(model->property("text").toString().contains(QString::fromUtf8("\xE3\x81\xAB")),
+               "migration: naturally delivered commit reaches authoritative model");
+        rig->setParentItem(nullptr);
+        printf("%s: %d failure(s)\n", failures == 0 ? "ALL OK" : "FAILURES", failures);
+        return failures == 0 ? 0 : 1;
+    }
 
     // ---------------- Phase 1: IME lifecycle ----------------
     call("newRig", 0, 0); // preserve / lock

@@ -15,6 +15,8 @@ target_link_libraries(native-input-probe PRIVATE
 enable_testing()
 add_test(NAME native-input-probe
     COMMAND native-input-probe "${AERIAL_LOCK_SOURCE}/Tests/auth-input-fixture.qml")
+add_test(NAME native-input-migration
+    COMMAND native-input-probe --migration "${AERIAL_LOCK_SOURCE}/Tests/auth-input-fixture.qml")
 
 add_executable(connection-loss-probe connection-loss-probe.cpp)
 target_link_libraries(connection-loss-probe PRIVATE Qt6::Core pthread)
@@ -38,3 +40,20 @@ add_test(NAME media-fallback
     COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml")
 set_tests_properties(media-fallback PROPERTIES ENVIRONMENT
     "LD_PRELOAD=$<TARGET_FILE:full-caller-faults>;AERIAL_TEST_FULL_CALLER_FAULT=core-create;QT_QPA_PLATFORM=offscreen")
+# Native desktop input and pointer probes used by the VM output-failover drivers.
+add_executable(desktop-input-probe desktop-input-probe.cpp)
+target_link_libraries(desktop-input-probe PRIVATE Qt6::Gui Qt6::Quick)
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-client.h"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${CMAKE_CURRENT_SOURCE_DIR}/virtual-pointer.xml"
+            "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-client.h"
+    DEPENDS virtual-pointer.xml)
+add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${CMAKE_CURRENT_SOURCE_DIR}/virtual-pointer.xml"
+            "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-protocol.c"
+    DEPENDS virtual-pointer.xml)
+add_executable(virtual-pointer-probe virtual-pointer-probe.c
+    "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-client.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-protocol.c")
+target_include_directories(virtual-pointer-probe PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(virtual-pointer-probe PRIVATE PkgConfig::WAYLAND)
