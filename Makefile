@@ -25,9 +25,33 @@ SUPERVISOR_OBJS := $(OBJDIR)/aerial-supervisor-proto.o $(OBJDIR)/aerial-supervis
 GUARD_OBJS := $(OBJDIR)/connection-guard.o
 GUARD_PLUGIN := native/qt-plugins/generic/libAerialLockConnectionGuard.so
 
-.PHONY: all install uninstall dev clean pam-limits build-flags
+.PHONY: all install uninstall dev clean pam-limits build-flags force-native-config
 
 all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor $(GUARD_PLUGIN)
+
+# Make cannot see variable changes in a command line. One content-stable
+# prerequisite records the effective native configuration, so an incremental
+# install cannot reuse objects compiled for a different prefix or flag set.
+define NATIVE_CONFIG
+CC=$(CC)
+CXX=$(CXX)
+CPPFLAGS=$(CPPFLAGS)
+CFLAGS=$(CFLAGS)
+CXXFLAGS=$(CXXFLAGS)
+LDFLAGS=$(LDFLAGS)
+DATADIR=$(DATADIR)
+LIBEXECDIR=$(LIBEXECDIR)
+PLUGINROOT=$(PLUGINROOT)
+endef
+
+$(OBJDIR):
+	@mkdir -p $@
+
+$(OBJDIR)/native-config: force-native-config | $(OBJDIR)
+	$(file >$@.tmp,$(NATIVE_CONFIG))
+	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv -f $@.tmp $@
+
+$(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS): $(OBJDIR)/native-config
 
 # Phony on purpose: the value can come from the environment, which Make
 # cannot express as a file prerequisite. The generator is sub-second, so
@@ -193,6 +217,7 @@ clean:
 	rm -f supervisor/aerial-lock-supervisor supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
 	rm -f native/connection-guard.moc $(GUARD_PLUGIN)
 	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS)
+	rm -f $(OBJDIR)/native-config $(OBJDIR)/native-config.tmp
 	@rmdir $(OBJDIR) 2>/dev/null || true
 
 dev: DEBUG_DISMISS=1
