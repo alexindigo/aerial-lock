@@ -38,6 +38,7 @@ Item {
         property var model: null
         property var host: null
         property var candidate: null
+        property var candidateLoader: null
         property var fallbackSpy: null
         property var readySpy: null
         property int writer: -1
@@ -96,6 +97,7 @@ Item {
             }
             verify(lifecycle !== null)
             verify(loader !== null)
+            candidateLoader = loader
             lifecycle.phase = "candidate"
             host.allowLoading = true
             loader.setSource(Qt.resolvedUrl("fixtures/HandoffTheme.qml"), { "context": ctx })
@@ -151,7 +153,9 @@ Item {
             compare(fallbackSpy.count, 1)
             compare(readySpy.count, 1)
             compare(model.handoffState, "")
-            compare(candidate.draft, "synthetic-draft")
+            compare(model.text, "synthetic-draft")
+            tryCompare(candidateLoader, "item", null)
+            verify(!candidateLoader.active, "failed candidates must not keep incubating")
         }
 
         function test_immediate_awaiting_claim_times_out() {
@@ -164,6 +168,32 @@ Item {
             tryCompare(host, "settled", true, 1500)
             verify(host.usingFallback)
             compare(fallbackSpy.count, 1)
+            tryCompare(candidateLoader, "item", null)
+            verify(!candidateLoader.active)
+        }
+
+        function test_pinned_fallback_releases_prepared_candidate() {
+            model.setActivity(writer, true, false)
+            loadCandidate()
+            host.fallbackPinned = true
+            verify(host.settled)
+            verify(host.usingFallback)
+            compare(model.handoffState, "")
+            compare(model.text, "synthetic-draft")
+            tryCompare(candidateLoader, "item", null)
+            verify(!candidateLoader.active)
+        }
+
+        function test_deadline_releases_candidate_during_handoff() {
+            model.setActivity(writer, true, false)
+            loadCandidate()
+            ignoreWarning(/ThemeHost: theme .* failed: loading deadline reached - using built-in panel/)
+            host.failSelected("loading deadline reached")
+            verify(host.settled)
+            verify(host.usingFallback)
+            compare(model.handoffState, "")
+            tryCompare(candidateLoader, "item", null)
+            verify(!candidateLoader.active)
         }
 
         function test_unrelated_handoff_does_not_arm_host_grace() {

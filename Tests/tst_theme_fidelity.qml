@@ -29,6 +29,26 @@ Item {
         readonly property var bundledThemes: ["Macintosh.qml", "Windows7.qml", "MaterialYou.qml",
                                               "Enfield.qml", "Clockwork.qml"]
 
+        function test_hidden_caret_stops_data() {
+            return [{tag: "enfield", filename: "Enfield.qml"},
+                    {tag: "clockwork", filename: "Clockwork.qml"}]
+        }
+
+        function test_hidden_caret_stops(data) {
+            load(data.filename)
+            var cores = []
+            collectCores(theme, cores)
+            var caret = cores[0].cursorDelegate.createObject(theme)
+            verify(caret !== null)
+            wait(200)
+            theme.visible = false
+            wait(100)
+            var stopped = caret.opacity
+            wait(350)
+            compare(caret.opacity, stopped, "hidden themes must stop their perpetual caret work")
+            caret.destroy()
+        }
+
         function test_failure_motion_data() {
             var rows = []
             for (var i = 0; i < bundledThemes.length; i++) {

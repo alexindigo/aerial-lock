@@ -396,12 +396,13 @@ FocusScope {
                 maskCharacter: "✦"
                 cursorDelegate: Component {
                     Rectangle {
+                        id: caret
                         width: 1.5 * root.s
                         height: 12 * root.s
                         color: root.mainText
                         SequentialAnimation on opacity {
                             loops: Animation.Infinite
-                            running: true
+                            running: caret.visible
                             NumberAnimation { to: 0.1; duration: 450 }
                             NumberAnimation { to: 1.0; duration: 450 }
                         }

@@ -245,6 +245,9 @@ Item {
         id: candidate
         anchors.fill: parent
         asynchronous: true
+        // Settlement owns candidate lifetime, including an incubation that
+        // has not completed yet. A pinned fallback retains no hidden theme.
+        active: !internal.settled || internal.useTheme
         visible: internal.useTheme
         enabled: visible
         focus: internal.useTheme

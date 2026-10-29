@@ -306,6 +306,7 @@ FocusScope {
                 // positions it.
                 cursorDelegate: Component {
                     Text {
+                        id: caret
                         text: "✦"
                         color: root.sakuraPink
                         font.family: root.uiFont
@@ -314,7 +315,7 @@ FocusScope {
                         layer.effect: DropShadow { color: root.sakuraPink; radius: 8; samples: 16 }
                         SequentialAnimation on opacity {
                             loops: Animation.Infinite
-                            running: true
+                            running: caret.visible
                             NumberAnimation { to: 0.2; duration: 600; easing.type: Easing.InOutSine }
                             NumberAnimation { to: 1.0; duration: 600; easing.type: Easing.InOutSine }
                         }
