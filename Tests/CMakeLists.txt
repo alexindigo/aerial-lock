@@ -27,3 +27,6 @@ pkg_check_modules(WAYLAND REQUIRED IMPORTED_TARGET wayland-client)
 target_link_libraries(connection-loss-probe PRIVATE Qt6::Gui PkgConfig::WAYLAND)
 add_library(guard-logger-trap SHARED guard-logger-trap.cpp)
 target_link_libraries(guard-logger-trap PRIVATE Qt6::Core ${CMAKE_DL_LIBS})
+add_test(NAME supervisor-session
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-supervisor-session.py"
+            "${AERIAL_LOCK_SOURCE}/supervisor/aerial-lock-supervisor")

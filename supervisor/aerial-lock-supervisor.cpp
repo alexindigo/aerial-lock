@@ -16,9 +16,12 @@
  *   exit != 0        → respawn under limit; at limit, stay locked + escalate
  */
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QTextStream>
@@ -44,15 +47,52 @@ static const int RESPAWN_LIMIT = 3;
 static const int RESPAWN_BACKOFF_MS = 1500;
 static const char *SUPERVISOR_DBUS_NAME = "org.aeriallock.Supervisor";
 
+// The protected resource is one compositor session, identified by the
+// Wayland socket a client started from this environment connects to
+// (libwayland's resolution: WAYLAND_DISPLAY, default "wayland-0", relative
+// to XDG_RUNTIME_DIR unless absolute). Several sessions can share one user
+// bus (nested or parallel compositors), so the single-instance name is
+// derived from that socket rather than being bus-wide.
+static QString sessionSocketPath()
+{
+    QByteArray display = qgetenv("WAYLAND_DISPLAY");
+    if (display.isEmpty())
+        display = "wayland-0";
+    QString path = QString::fromLocal8Bit(display);
+    if (!path.startsWith(QLatin1Char('/'))) {
+        const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
+        if (runtime.isEmpty())
+            return QString();
+        path = QString::fromLocal8Bit(runtime) + QLatin1Char('/') + path;
+    }
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    return canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
+}
+
+static QString supervisorServiceName(const QString &socket)
+{
+    // Bus name elements allow [A-Za-z0-9_-] and must not start with a digit.
+    const QByteArray digest = QCryptographicHash::hash(socket.toUtf8(),
+                                                      QCryptographicHash::Sha256).toHex().left(32);
+    return QStringLiteral("%1.s%2").arg(QString::fromLatin1(SUPERVISOR_DBUS_NAME),
+                                       QString::fromLatin1(digest));
+}
+
 class Supervisor : public QObject
 {
     Q_OBJECT
 public:
     Supervisor()
     {
+        m_sessionSocket = sessionSocketPath();
+        if (m_sessionSocket.isEmpty()) {
+            log("cannot identify the Wayland session to protect "
+                "(WAYLAND_DISPLAY is relative and XDG_RUNTIME_DIR is unset) — exiting");
+            std::exit(1);
+        }
         QDBusConnection bus = QDBusConnection::sessionBus();
-        if (!bus.interface()->registerService(QString::fromLatin1(SUPERVISOR_DBUS_NAME))) {
-            log("another supervisor is on duty — exiting");
+        if (!bus.interface()->registerService(supervisorServiceName(m_sessionSocket))) {
+            log(QStringLiteral("another supervisor is on duty for %1 — exiting").arg(m_sessionSocket));
             // std::exit, not QCoreApplication::exit: the event loop hasn't
             // started yet, so Qt's quit() would be a no-op here.
             std::exit(0);
@@ -158,7 +198,7 @@ private:
         // can arrive in either order; without this guard a dead-session
         // "child exit" reads as "locker died → respawn" and the supervisor
         // spawns a locker into a dead session.
-        if (!waylandAlive()) {
+        if (!waylandAlive(m_sessionSocket)) {
             log("compositor connection dead — session over, clearing state");
             finishEpisode(0);
             return;
@@ -204,13 +244,12 @@ private:
     }
 
     // The compositor connection is the ordering guard's source of truth:
-    // if the supervisor's own Wayland connection is gone, the compositor is
-    // dead and the session is over.
-    static bool waylandAlive()
+    // if the protected session's socket no longer accepts a connection, the
+    // compositor is dead and the session is over.
+    static bool waylandAlive(const QString &socket)
     {
-        const char *disp = getenv("WAYLAND_DISPLAY");
-        if (!disp || !*disp) return false;
-        struct wl_display *d = wl_display_connect(disp);
+        const QByteArray path = QFile::encodeName(socket);
+        struct wl_display *d = wl_display_connect(path.constData());
         if (!d) return false;
         wl_display_disconnect(d);
         return true;
@@ -244,6 +283,7 @@ private:
     }
 
     QProcess *m_child = nullptr;
+    QString m_sessionSocket;
     QString m_lockerCommand;
     QString m_video;
     QString m_lastVideo;
