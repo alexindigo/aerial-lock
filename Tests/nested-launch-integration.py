@@ -21,9 +21,12 @@ spec.loader.exec_module(driver)
 
 def wait_receipt(path, seconds=30):
     deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
+    while True:
+        expired = time.monotonic() >= deadline  # sampled before the last check
         if path.exists():
             return json.loads(path.read_text())
+        if expired:
+            break
         time.sleep(0.02)
     raise RuntimeError("nested launch receipt NOT_EXERCISED: " + str(path))
 

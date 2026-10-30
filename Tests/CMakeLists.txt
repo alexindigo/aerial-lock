@@ -31,6 +31,8 @@ if(AERIAL_LOCK_VM_RECORD)
 endif()
 add_test(NAME panel-output-paths
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-panel-output-paths.py")
+add_test(NAME driver-wait-order
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-driver-wait-order.py")
 add_test(NAME blocked-latch
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-blocked-latch.py"
             "$<TARGET_FILE:connection-loss-probe>")
