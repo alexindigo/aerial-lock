@@ -5,8 +5,9 @@ import "../Modules/Lock" as LockModule
 // Run through CTest: `media-fallback` preloads the test-only
 // libfull-caller-faults.so with AERIAL_TEST_FULL_CALLER_FAULT=core-create and
 // runs the core case; `media-fallback-render` runs the render case, which needs
-// a Qt platform that actually renders video (it skips on offscreen). Not named
-// tst_*: each case needs its own environment.
+// a platform that can render video. It skips only when the platform is known
+// not to (see videoUnrenderableReason); anywhere else, video that fails to
+// start is a failure. Not named tst_*: each case needs its own environment.
 TestCase {
     id: tests
     name: "MediaFallbackFault"
@@ -17,6 +18,18 @@ TestCase {
     Component {
         id: backgroundComponent
         LockModule.LockBackground { width: 64; height: 40 }
+    }
+
+    // The explicit skip predicate for rendering cases. mpvqml renders only
+    // through Qt Quick on OpenGL, and the headless QPA plugins never present
+    // a window. Any other platform is expected to play video.
+    function videoUnrenderableReason() {
+        var plugin = Qt.platform.pluginName
+        if (plugin === "offscreen" || plugin === "minimal")
+            return "the " + plugin + " Qt platform does not render windows"
+        if (GraphicsInfo.api !== GraphicsInfo.OpenGL)
+            return "mpvqml needs the OpenGL Qt Quick backend (graphics API " + GraphicsInfo.api + ")"
+        return ""
     }
 
     function player(background) {
@@ -54,17 +67,18 @@ TestCase {
     // hidden background must stop instead of decoding behind the solid colour,
     // and a later renderer recovery must not resume it.
     function test_render_failure_stops_hidden_playback() {
+        var unrenderable = videoUnrenderableReason()
+        if (unrenderable.length > 0)
+            skip(unrenderable)
         var background = createTemporaryObject(backgroundComponent, tests.parent)
         var failures = []
         background.loadFailed.connect(function (message) { failures.push(message) })
         var mpv = player(background)
         verify(mpv !== null)
         background.items = [{ kind: "file", path: "av://lavfi:testsrc2=size=320x240:rate=25" }]
-        var deadline = Date.now() + 10000
-        while (!(mpv.hasVideo && mpv.position > 0.3) && Date.now() < deadline)
-            wait(50)
-        if (!mpv.hasVideo)
-            skip("needs a Qt platform that renders video")
+        // On a rendering platform, video that does not start is a regression.
+        tryVerify(function () { return mpv.hasVideo && mpv.position > 0.3 }, 10000,
+                  "video starts on a rendering platform")
         verify(mpv.coreAvailable)
         mpv.renderingFailed(-1, "injected render loss") // as the player emits it
         verify(background.mediaFailed)
