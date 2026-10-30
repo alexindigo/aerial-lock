@@ -57,6 +57,7 @@ ShellRoot {
             if (startMode === "inline") prompt()
             else if (startMode === "error") error(1)
             else if (startMode === "complete") { active = false; completed(PamResult.Success) }
+            else if (startMode === "silent") {} // in flight, no PAM traffic at all
             else Qt.callLater(endpoint.prompt)
             return true
         }
@@ -168,13 +169,42 @@ ShellRoot {
                 check(lock.authState === lock.authAuthenticating && lock.unlockInProgress && lock.acceptedResponse === null, "async queued respond awaits explicit prompt without duplicate answer")
                 phase = 3
                 sequence.restart()
-            } else {
+            } else if (phase === 3) {
                 check(lock.authState === lock.authPrompting && !lock.unlockInProgress, "async queued respond request visibly prompting")
                 check(lock.context.auth.input.text === "", "async queued accepted draft does not resurrect")
+                // PAM now waits for the user. Outlast the inactivity watchdog.
+                check(fixtureConfig.data.pamWatchdogTimeoutMs > 0 && fixtureConfig.data.pamWatchdogTimeoutMs <= 2000,
+                      "fixture config uses a short PAM watchdog")
+                phase = 4
+                watchdogWait.restart()
+            }
+        }
+    }
+    Timer {
+        id: watchdogWait
+        interval: fixtureConfig.data.pamWatchdogTimeoutMs + 500
+        onTriggered: {
+            var lock = fixture.lock
+            if (phase === 4) {
+                check(lock.authState === lock.authPrompting && !lock.unlockInProgress
+                      && lock.statusMessage !== lock.context.labels.timedOut,
+                      "waiting for the user is never timed out")
+                check(endpoint.active && !lock.attemptCancelled, "prompt awaiting the user is not aborted")
+                endpoint.abort()
+                endpoint.startMode = "silent"
+                lock.tryUnlock()
+                check(lock.authState === lock.authAuthenticating && lock.unlockInProgress, "silent PAM call in flight")
+                phase = 5
+                watchdogWait.restart()
+            } else {
+                check(lock.authState === lock.authError && !lock.unlockInProgress
+                      && lock.statusMessage === lock.context.labels.timedOut,
+                      "in-flight PAM call without traffic times out")
+                check(!endpoint.active && lock.attemptCancelled, "timed-out PAM call aborted")
                 console.log("LOCK_LIFECYCLE_OUTCOME assertions=" + assertions + " failed=" + failed)
                 Qt.exit(failed ? 1 : 0)
             }
         }
     }
-    Timer { interval: 15000; running: true; onTriggered: { console.error("LOCK_LIFECYCLE_NOT_EXERCISED"); Qt.exit(1) } }
+    Timer { interval: 20000; running: true; onTriggered: { console.error("LOCK_LIFECYCLE_NOT_EXERCISED"); Qt.exit(1) } }
 }

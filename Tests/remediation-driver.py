@@ -494,11 +494,16 @@ class Session:
         (shell / "shell.qml").write_text('import QtQuick\nimport Quickshell\n'
             'ShellRoot { settings.watchFiles: false; '
             'Loader { source: "root:/Tests/lock-lifecycle-shell.qml"; } }\n')
+        # A short inactivity watchdog lets the fixture outlast it while PAM
+        # waits for the user, and observe it firing on a silent PAM call.
+        config = self.output / "config/aerial-lock"
+        config.mkdir(parents=True, exist_ok=True)
+        (config / "config.json").write_text(json.dumps({"sources": [], "pamWatchdogTimeoutMs": 800}))
         fixture = ObservedProcess([str(self.stage / "libexec/aerial-lock/aerial-lock-run"),
             "--shell-dir", str(shell), "--plugin-root", str(self.stage / "lib/aerial-lock/qt-plugins")],
             self.env, self.output / "prompt-state.log")
         self.locker = fixture
-        fixture.wait_line(lambda line: "LOCK_LIFECYCLE_OUTCOME assertions=37 failed=false" in line)
+        fixture.wait_line(lambda line: "LOCK_LIFECYCLE_OUTCOME assertions=43 failed=false" in line)
         if fixture.finish() != 0:
             raise RuntimeError("actual controller prompt fixture failed")
         self.locker = None
@@ -1075,7 +1080,7 @@ def main():
         if args.case == "prompt-state":
             session.prompt_fixture()
             result = 0
-            print(json.dumps({"case": args.case, "assertions": 37, "exit": 0}), flush=True)
+            print(json.dumps({"case": args.case, "assertions": 43, "exit": 0}), flush=True)
             return result
         for cycle in range(1, args.cycles + 1):
             if args.case == "panel-failover":
