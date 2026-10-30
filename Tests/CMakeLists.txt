@@ -50,9 +50,14 @@ add_library(full-caller-faults SHARED full-caller-faults.c)
 target_link_libraries(full-caller-faults PRIVATE PkgConfig::MPV pthread ${CMAKE_DL_LIBS})
 find_program(QMLTESTRUNNER qmltestrunner PATHS /usr/lib/qt6/bin /usr/lib64/qt6/bin REQUIRED)
 add_test(NAME media-fallback
-    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml")
+    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml"
+            MediaFallbackFault::test_core_failure_keeps_solid_scenery_and_reports_once)
 set_tests_properties(media-fallback PROPERTIES ENVIRONMENT
     "LD_PRELOAD=$<TARGET_FILE:full-caller-faults>;AERIAL_TEST_FULL_CALLER_FAULT=core-create;QT_QPA_PLATFORM=offscreen")
+# Needs a rendering Qt platform (e.g. inside a Wayland session); skips on offscreen.
+add_test(NAME media-fallback-render
+    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml"
+            MediaFallbackFault::test_render_failure_stops_hidden_playback)
 # Native desktop input and pointer probes used by the VM output-failover drivers.
 add_executable(desktop-input-probe desktop-input-probe.cpp)
 target_link_libraries(desktop-input-probe PRIVATE Qt6::Gui Qt6::Quick)
