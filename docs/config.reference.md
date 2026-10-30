@@ -30,7 +30,7 @@ fields keep their defaults.
 | `preferredResolution` | number | *(absent)*    | `1080` or `2160`. Optional and **not** in the bundle defaults — absence is the signal. See "Resolution" below. |
 | `pamService`       | string  | `"aerial-lock"`  | PAM config under `/etc/pam.d/`                 |
 | `fallbackQuitMs`   | number  | `3000`           | Retry the explicit quit after unlock if the first deferred quit does not complete. |
-| `pamWatchdogTimeoutMs` | number | `60000`       | Abort an unresponsive PAM attempt after this interval; keep the lock engaged and allow a fresh attempt. |
+| `pamWatchdogTimeoutMs` | number | `60000`       | Abort a PAM call that shows no activity for this interval; keep the lock engaged and allow a fresh attempt. Time spent waiting for the user at a prompt never counts. |
 
 ### `sources` (array)
 

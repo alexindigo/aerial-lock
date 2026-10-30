@@ -57,12 +57,13 @@ ctest --test-dir "$ROOT/build/debug/aerial-tests" --output-on-failure
 `make` comes first: `supervisor-session` uses the built supervisor. The portable
 set covers native input and editor migration, the BLOCKED latch, supervisor
 session scoping, pre-engagement/monitor/mixed supervisor outcomes, literal shell
-operands, incremental build configuration, media-failure fallback (an injected
-core failure; `media-fallback-render` needs a platform that renders video, e.g.
-inside a nested compositor: it is reported as skipped only on the
-`offscreen`/`minimal` Qt platforms or a non-OpenGL Qt Quick backend, and fails
-anywhere else if video does not start) and output-selection policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the
-`owned-instance` regression for a prepared VM (below).
+operands, incremental build configuration, driver wait ordering, media-failure
+fallback (an injected core failure; `media-fallback-render` needs a platform
+that renders video, e.g. inside a nested compositor: it is reported as skipped
+only on the `offscreen`/`minimal` Qt platforms or a non-OpenGL Qt Quick
+backend, and fails anywhere else if video does not start) and output-selection
+policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the `owned-instance`
+regression for a prepared VM (below).
 
 ## Real-session integration drivers
 

@@ -35,7 +35,8 @@ availability, with manual recovery available from another terminal.
   fallback. (`d70f6db`, `5314d2d`, `d55f65e`, `edac818`)
 - QML, native-input, theme-layout and script regressions, plus isolated
   real-session integration drivers for authentication, connection loss,
-  output failover and media resources. (`5bbd3ba`, `979f8fe`, `9ee58cf`)
+  output failover and media resources. (`5bbd3ba`, `979f8fe`, `9ee58cf`,
+  `a3726df`)
 
 ### Changed
 
@@ -61,12 +62,16 @@ now follow their effective install paths and flags.
 
 - Missing/empty PAM service files are detected before locking; an empty initial
   submission shows the requested prompt without overwriting it as busy. Normal
-  unlock exits deterministically after releasing the lock. (`97cd411`,
-  `c1709b3`, `f681097`)
+  unlock exits deterministically after releasing the lock. The hung-attempt
+  watchdog runs only while a PAM call is in flight, so it never cancels a
+  prompt that is waiting for the user. (`97cd411`, `c1709b3`, `f681097`,
+  `185e3fb`)
 - Failed video initialization/rendering leaves solid scenery and usable
-  authentication. Output removal moves the same editor to a surviving surface;
+  authentication; playback stops for the rest of that lock, so a hidden player
+  never keeps decoding and a recovered renderer does not resume it behind the
+  solid colour. Output removal moves the same editor to a surviving surface;
   a zero-output interval parks it without losing the draft or restarting PAM.
-  (`23d9307`, `b08b61d`)
+  (`23d9307`, `80088e0`, `b08b61d`)
 - Accent sampling owns one completion-driven transaction, bounds image decode,
   unloads captured URLs, uses private reused runtime files and samples only the
   consumed background. Late video settles before sampling and does not
@@ -80,7 +85,7 @@ now follow their effective install paths and flags.
   `7db8e4f`, `da5e45c`)
 - Native builds keep objects inside the build tree, honor standard compiler/linker
   flags and rebuild when install paths or native configuration change.
-  (`e0c16d7`, `a8a2f56`)
+  (`e0c16d7`, `be37d7f`)
 
 ### Security
 
