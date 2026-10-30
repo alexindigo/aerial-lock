@@ -42,17 +42,26 @@ all five themes and the fallback; glyph layout must match plain-text rendering.
 
 ### Native tests
 
+One layout serves these tests and the VM drivers below: a workspace `$ROOT`
+with the tree under test at `$ROOT/src/aerial-lock` and the test build at
+`$ROOT/build/debug/aerial-tests`.
+
 ```sh
-cmake -S Tests -B build/aerial-tests -G Ninja -DAERIAL_LOCK_SOURCE="$PWD"
-cmake --build build/aerial-tests
-ctest --test-dir build/aerial-tests --output-on-failure
+make -C "$ROOT/src/aerial-lock"
+cmake -S "$ROOT/src/aerial-lock/Tests" -B "$ROOT/build/debug/aerial-tests" -G Ninja \
+  -DAERIAL_LOCK_SOURCE="$ROOT/src/aerial-lock"
+cmake --build "$ROOT/build/debug/aerial-tests"
+ctest --test-dir "$ROOT/build/debug/aerial-tests" --output-on-failure
 ```
 
-Run `make` first: `supervisor-session` uses the built supervisor. The portable
+`make` comes first: `supervisor-session` uses the built supervisor. The portable
 set covers native input and editor migration, the BLOCKED latch, supervisor
 session scoping, pre-engagement/monitor/mixed supervisor outcomes, literal shell
 operands, incremental build configuration, media-failure fallback (an injected
-core failure) and output-selection policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the
+core failure; `media-fallback-render` needs a platform that renders video, e.g.
+inside a nested compositor: it is reported as skipped only on the
+`offscreen`/`minimal` Qt platforms or a non-OpenGL Qt Quick backend, and fails
+anywhere else if video does not start) and output-selection policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the
 `owned-instance` regression for a prepared VM (below).
 
 ## Real-session integration drivers
@@ -64,9 +73,10 @@ never run on a desktop session. Every run takes `--root <workspace>` and
 `--vm-record <manifest>`.
 
 Workspace layout under the root: `src/aerial-lock` (the tree under test),
-`build/debug/aerial-tests` (the CMake build above), `stage` (`make install
-DESTDIR=<root>/stage`), `run`, `results`, `media`. `ROOT` below names that
-disk-backed guest workspace and `VM_RECORD` its operator-produced manifest.
+`build/debug/aerial-tests` (built exactly as in "Native tests" above), `stage`
+(`make -C "$ROOT/src/aerial-lock" install DESTDIR="$ROOT/stage"`), `run`,
+`results`, `media`. `ROOT` below names that disk-backed guest workspace and
+`VM_RECORD` its operator-produced manifest.
 
 ```sh
 bash Tests/run-remediation.sh --root "$ROOT" --lane debug --vm-record "$VM_RECORD" \

@@ -282,7 +282,10 @@ does not cancel a file write or admit a replacement; real completion or receiver
 retirement releases the slot. Video that appears only after the settle restarts
 the settle once, never an immediate grab; a sensed, in-flight or exhausted track
 is not sampled again when video availability toggles. Scenery failure leaves
-authentication independent.
+authentication independent: if the video core or its renderer fails, playback
+stops and that surface keeps the solid background colour for the rest of the
+lock (a later renderer recovery does not resume it); the next lock tries
+video again.
 
 The theme/editor is one instance per lock, owned by the lock (not by an output)
 and attached to the selected output's lock surface. The selected output stays

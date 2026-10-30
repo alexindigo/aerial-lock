@@ -31,6 +31,8 @@ if(AERIAL_LOCK_VM_RECORD)
 endif()
 add_test(NAME panel-output-paths
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-panel-output-paths.py")
+add_test(NAME driver-wait-order
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-driver-wait-order.py")
 add_test(NAME blocked-latch
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-blocked-latch.py"
             "$<TARGET_FILE:connection-loss-probe>")
@@ -57,9 +59,17 @@ add_library(full-caller-faults SHARED full-caller-faults.c)
 target_link_libraries(full-caller-faults PRIVATE PkgConfig::MPV pthread ${CMAKE_DL_LIBS})
 find_program(QMLTESTRUNNER qmltestrunner PATHS /usr/lib/qt6/bin /usr/lib64/qt6/bin REQUIRED)
 add_test(NAME media-fallback
-    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml")
+    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml"
+            MediaFallbackFault::test_core_failure_keeps_solid_scenery_and_reports_once)
 set_tests_properties(media-fallback PROPERTIES ENVIRONMENT
     "LD_PRELOAD=$<TARGET_FILE:full-caller-faults>;AERIAL_TEST_FULL_CALLER_FAULT=core-create;QT_QPA_PLATFORM=offscreen")
+# Needs a platform that renders video (e.g. inside a Wayland session). On a
+# headless QPA plugin or a non-OpenGL Qt Quick backend the case skips, and CTest
+# reports it as skipped rather than passed.
+add_test(NAME media-fallback-render
+    COMMAND "${QMLTESTRUNNER}" -input "${AERIAL_LOCK_SOURCE}/Tests/media-fallback-fault.qml"
+            MediaFallbackFault::test_render_failure_stops_hidden_playback)
+set_tests_properties(media-fallback-render PROPERTIES SKIP_REGULAR_EXPRESSION "SKIP +: ")
 # Native desktop input and pointer probes used by the VM output-failover drivers.
 add_executable(desktop-input-probe desktop-input-probe.cpp)
 target_link_libraries(desktop-input-probe PRIVATE Qt6::Gui Qt6::Quick)

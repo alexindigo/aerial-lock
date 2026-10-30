@@ -56,17 +56,30 @@ class ObservedProcess:
                 stream.write(line)
                 stream.flush()
 
-    def wait_line(self, predicate, seconds=15):
+    def wait_for(self, match, seconds=15, after=0, newest_first=False):
+        """Return the first retained (stamp, line) accepted by match, or None.
+
+        Exit is sampled before each scan; once the process has exited its
+        reader is drained before the final scan, so a line printed just
+        before exit is never missed."""
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            for stamp, line in tuple(self.lines):
-                if predicate(line):
-                    return stamp
-            if self.process.poll() is not None:
+        while True:
+            exited = self.process.poll() is not None
+            if exited:
                 self.thread.join(2)
-                break
+            lines = tuple(self.lines)
+            for stamp, line in (reversed(lines) if newest_first else lines):
+                if stamp >= after and match(line):
+                    return stamp, line
+            if exited or time.monotonic() >= deadline:
+                return None
             time.sleep(0.01)
-        raise RuntimeError("required consumer/protocol outcome NOT_EXERCISED; see " + str(self.log))
+
+    def wait_line(self, predicate, seconds=15):
+        hit = self.wait_for(predicate, seconds)
+        if hit is None:
+            raise RuntimeError("required consumer/protocol outcome NOT_EXERCISED; see " + str(self.log))
+        return hit[0]
 
     def finish(self, seconds=15):
         try:
@@ -494,11 +507,16 @@ class Session:
         (shell / "shell.qml").write_text('import QtQuick\nimport Quickshell\n'
             'ShellRoot { settings.watchFiles: false; '
             'Loader { source: "root:/Tests/lock-lifecycle-shell.qml"; } }\n')
+        # A short inactivity watchdog lets the fixture outlast it while PAM
+        # waits for the user, and observe it firing on a silent PAM call.
+        config = self.output / "config/aerial-lock"
+        config.mkdir(parents=True, exist_ok=True)
+        (config / "config.json").write_text(json.dumps({"sources": [], "pamWatchdogTimeoutMs": 800}))
         fixture = ObservedProcess([str(self.stage / "libexec/aerial-lock/aerial-lock-run"),
             "--shell-dir", str(shell), "--plugin-root", str(self.stage / "lib/aerial-lock/qt-plugins")],
             self.env, self.output / "prompt-state.log")
         self.locker = fixture
-        fixture.wait_line(lambda line: "LOCK_LIFECYCLE_OUTCOME assertions=37 failed=false" in line)
+        fixture.wait_line(lambda line: "LOCK_LIFECYCLE_OUTCOME assertions=43 failed=false" in line)
         if fixture.finish() != 0:
             raise RuntimeError("actual controller prompt fixture failed")
         self.locker = None
@@ -715,15 +733,9 @@ class Session:
                 return False
             chosen = json.loads(line.split("PANEL_SNAPSHOT ", 1)[1])
             return predicate(chosen)
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            for stamp, line in reversed(tuple(self.locker.lines)):
-                if stamp >= after and match(line):
-                    return chosen
-            if self.locker.process.poll() is not None:
-                break
-            time.sleep(0.01)
-        raise RuntimeError("panel consumer outcome NOT_EXERCISED")
+        if self.locker.wait_for(match, seconds, after=after, newest_first=True) is None:
+            raise RuntimeError("panel consumer outcome NOT_EXERCISED")
+        return chosen
 
     def hypr(self, *args):
         self.assert_control()
@@ -786,13 +798,16 @@ class Session:
 
     def wait_hypr_outputs(self, expected, seconds=10):
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+        while True:
+            # Sample the locker's exit before the compositor state, so the
+            # last evaluation is never older than the exit it reacts to.
+            exited = self.locker.process.poll() is not None
             monitors = json.loads(self.hypr("-j", "monitors"))
             names = {monitor["name"] for monitor in monitors
                      if not monitor.get("disabled", False) and monitor.get("width", 0) > 0}
             if names == expected:
                 return names
-            if self.locker.process.poll() is not None:
+            if exited or time.monotonic() >= deadline:
                 break
             time.sleep(0.01)
         raise RuntimeError("required Hyprland enabled-output set NOT_EXERCISED: " + repr(expected))
@@ -1076,7 +1091,7 @@ def main():
         if args.case == "prompt-state":
             session.prompt_fixture()
             result = 0
-            print(json.dumps({"case": args.case, "assertions": 37, "exit": 0}), flush=True)
+            print(json.dumps({"case": args.case, "assertions": 43, "exit": 0}), flush=True)
             return result
         for cycle in range(1, args.cycles + 1):
             if args.case == "panel-failover":

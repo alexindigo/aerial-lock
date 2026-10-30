@@ -21,7 +21,16 @@ Scope {
     // an empty answer to an already-active prompt is submitted). Cleared
     // before pam.respond, and on failure, abort and teardown.
     property var acceptedResponse: null
+    // True exactly while a PAM call is in flight (start/respond until its
+    // next prompt, completion or error). The PAM watchdog follows it: it never
+    // runs while PAM waits for the user.
     property bool unlockInProgress: false
+    onUnlockInProgressChanged: {
+        if (unlockInProgress)
+            watchdog.restart()
+        else
+            watchdog.stop()
+    }
     property bool attemptCancelled: false
     property string statusMessage: ""
     property int authState: authIdle
@@ -475,7 +484,7 @@ Scope {
         root.unlockInProgress = true
         root.authState = root.authAuthenticating
         root.statusMessage = i18n.authenticating || "Authenticating..."
-        watchdog.restart()
+        watchdog.restart() // a new PAM call, even if one was already in flight
     }
 
     PamContext {
@@ -494,7 +503,6 @@ Scope {
         function onPamMessage() {
             var endpoint = root.pamEndpoint
             logger.d("Lock", "PAM message: " + endpoint.message + " (error=" + endpoint.messageIsError + ")")
-            watchdog.restart()
             if (endpoint.responseRequired) {
                 // PAM is asking for input.
                 if (root.acceptedResponse !== null) {
@@ -515,8 +523,11 @@ Scope {
                 }
             } else if (endpoint.message && endpoint.message.length > 0) {
                 // Informational (fingerprint "touch the sensor", etc.) —
-                // PAM is still working; field stays disabled.
+                // PAM is still working; field stays disabled. Traffic during
+                // an in-flight call restarts the inactivity watchdog.
                 root.statusMessage = endpoint.message
+                if (root.unlockInProgress)
+                    watchdog.restart()
             }
         }
 
@@ -560,8 +571,10 @@ Scope {
     // Watchdog: a PAM transaction can hang without ever asking anything
     // (slow module, hardware-key touch nobody makes, offline pam_sss). This
     // is an inactivity timer, not a wall-clock deadline — any PAM traffic
-    // restarts it, so chatty stacks run as long as they need. On fire the
-    // abort returns to a fresh prompt; it never unlocks.
+    // restarts it, so chatty stacks run as long as they need. It runs only
+    // while a PAM call is in flight (unlockInProgress); a prompt waiting for
+    // the user is never timed out. On fire the abort returns to a fresh
+    // prompt; it never unlocks.
     Timer {
         id: watchdog
         interval: config.data.pamWatchdogTimeoutMs

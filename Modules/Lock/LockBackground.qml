@@ -51,16 +51,34 @@ Item {
             return
         stopped = true
         sampler.shutdown()
-        player.paused = true
-        player.stop(false)
+        stopPlayback()
     }
     Component.onDestruction: shutdown()
 
-    // The player reports the failure itself (errorOccurred → loadFailed);
-    // this only retires the scenery so it is reported once.
+    // The one place playback stops, at most once. Without a core there is
+    // nothing to stop (stop() would only report an unavailable core).
+    property bool playbackStopped: false
+    function stopPlayback() {
+        if (playbackStopped || !player.coreAvailable)
+            return
+        playbackStopped = true
+        player.paused = true
+        player.stop(false)
+    }
+
+    // Media failure is final for this background, i.e. for this lock: the
+    // surface keeps its solid colour until unlock and the next lock tries
+    // again. The player reports the failure itself (errorOccurred →
+    // loadFailed), so this only retires the scenery. Playback is stopped too:
+    // mpvqml keeps the core and the playback intent across a render failure,
+    // so the hidden player would otherwise keep decoding, and a later
+    // renderer recovery could resume video behind the solid colour.
     function mediaFailure() {
+        if (mediaFailed)
+            return
         mediaFailed = true
         sampler.shutdown()
+        stopPlayback()
     }
 
     // Single drive point: the parent assigns items after

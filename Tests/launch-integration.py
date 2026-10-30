@@ -83,13 +83,14 @@ def main():
         # The shim execs the common runner, which execs qs. All three share the
         # supervisor's one QProcess child PID; no launcher-owned second qs fork.
         deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
+        while True:
+            exited = supervisor.process.poll() is not None  # sampled before the scan
             candidates = [pid for pid in descendants(supervisor.process.pid)
                           if Path(f"/proc/{pid}/comm").read_text().strip() == "qs"]
             if len(candidates) == 1 and hasattr(log, "process"):
                 qs_pid = candidates[0]
                 break
-            if supervisor.process.poll() is not None: break
+            if exited or time.monotonic() >= deadline: break
             time.sleep(0.01)
         if qs_pid is None: raise RuntimeError("staged supervised qs NOT_EXERCISED")
         log.wait_line(lambda line: "ext_session_lock_v1" in line and ".locked()" in line)
