@@ -78,7 +78,11 @@ authentication works nested (`pam.d/aerial-lock` → `pam_unix` →
 
 ### T4: kill switch
 With the lock engaged, fire the kill-switch bind. The locker process is
-killed and the compositor releases the lock.
+killed, but the secure session stays locked: `ext-session-lock-v1` forbids a
+compositor from unlocking when its locker dies (niri keeps a solid colour).
+That is the expected result, not a failure. A development launch has no
+supervisor to start a replacement, so recover by closing the nested sandbox
+compositor (T5).
 
 ### T5: close the nested window
 Close the nested window from the host session. All sandbox state is
