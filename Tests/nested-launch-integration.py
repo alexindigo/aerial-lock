@@ -189,7 +189,8 @@ def main():
                 raise RuntimeError("owned locker identity changed before authorized recovery")
             # Explicitly authorized owned-test recovery. Keep a failed outcome;
             # first try the ordinary credential path with a cleared test field.
-            subprocess.run(["wtype", "-M", "ctrl", "-k", "a", "-m", "ctrl", "-k", "BackSpace"], env=session.env)
+            subprocess.run(["wtype", "-M", "ctrl", "-k", "a", "-m", "ctrl", "-k", "BackSpace"], env=session.env,
+                           check=False, timeout=15)
             try:
                 session.type_and_submit()
                 wait_receipt(session.output / "exit.json", 10)

@@ -8,6 +8,7 @@ locker. The locker is a stub runner; no compositor, qs or credential is used.
 """
 import os
 from pathlib import Path
+import select
 import socket
 import subprocess
 import sys
@@ -50,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-supervisor-") as directory:
                            stdout=subprocess.PIPE, text=True)
     supervisors = []
     try:
+        assert select.select([bus.stdout], [], [], 10)[0], "private bus did not start"
         address = bus.stdout.readline().strip()
         assert address, "private bus did not start"
         base = {key: value for key, value in os.environ.items()
