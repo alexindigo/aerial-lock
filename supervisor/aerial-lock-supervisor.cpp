@@ -14,7 +14,8 @@
  * Decision matrix is exit-code only:
  *   compositor dead  → session over, clean exit (checked FIRST)
  *   exit 0           → clean unlock / PAM refusal / external invalidation → done
- *   exit 72          → this attempt never engaged (guard unavailable)
+ *   exit 72          → this attempt never engaged (runner/guard unavailable;
+ *                      a shell's 126/127 from the runner counts the same)
  *   exit 71          → guard monitor failed; engagement is unknown
  *   exit != 0        → respawn under limit; at limit, guard failures exit 3,
  *                      other failures exit 2. No automatic unlock.
@@ -219,10 +220,17 @@ private:
 
         // Abnormal death. The correct response to an abnormal death while
         // locked is a respawn.
-        m_onlyPreEngagementFailures = m_onlyPreEngagementFailures && exitCode == 72;
-        m_guardFailed = m_guardFailed || exitCode == 71 || exitCode == 72;
+        // 72 is the runner's and guard's "never engaged". A shell's 126/127
+        // (command not executable / not found) means the locker process
+        // itself never ran, so it cannot have engaged either; qs and the
+        // guard never exit with those codes.
+        const bool notEngaged = exitCode == 72 || exitCode == 126 || exitCode == 127;
+        m_onlyPreEngagementFailures = m_onlyPreEngagementFailures && notEngaged;
+        m_guardFailed = m_guardFailed || exitCode == 71 || notEngaged;
         if (exitCode == 72)
             log("guard unavailable — this attempt did not engage the lock");
+        else if (notEngaged)
+            log("locker could not be started — this attempt did not engage the lock");
         else if (exitCode == 71)
             log("guard monitor failed — this attempt's engagement is unknown");
         if (m_attempt < RESPAWN_LIMIT) {

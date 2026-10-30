@@ -196,7 +196,8 @@ The supervisor (`aerial-lock-supervisor`, what `aerial-lock` execs) owns the
 locker lifecycle: spawns the QML locker, respawns on abnormal death (limit
 **3 total attempts**, short backoff). There is no automatic unlock. Locker exit
 `0` means clean unlock / PAM refusal / external invalidation; abnormal exits
-retry. Guard startup failure is `72` (that attempt never engaged); monitor
+retry. Guard or launcher startup failure, including a missing `qs`, is `72`
+(that attempt never engaged); monitor
 failure is `71` (engagement unknown). At exhaustion the supervisor exits `3`
 for guard failures: all-72 attempts mean the screen is **NOT locked**, while
 mixed outcomes or a monitor failure mean it **may be unlocked**. Other abnormal

@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# No lock exists until the exec at the bottom succeeds, so every way this
+# runner can stop before then (bad arguments, set -e/-u, a missing or
+# unexecutable qs, a failed exec) reports 72: "this attempt did not engage".
+trap 'exit 72' EXIT
+shopt -s execfail
 shell_dir=""
 plugin_root=""
 while (($#)); do
     case "$1" in
-        --shell-dir) shell_dir=$2; shift 2 ;;
-        --plugin-root) plugin_root=$2; shift 2 ;;
+        --shell-dir) shell_dir=${2-}; shift 2 ;;
+        --plugin-root) plugin_root=${2-}; shift 2 ;;
         *) printf 'aerial-lock-run: unknown argument %s\n' "$1" >&2; exit 72 ;;
     esac
 done
@@ -15,26 +20,25 @@ if [[ ! -d "$shell_dir" || ! -d "$plugin_root" || ! -f "$plugin_root/generic/lib
 fi
 unset AERIAL_LOCK_CONNECTION_GUARD_PID QT_WAYLAND_RECONNECT AERIAL_LOCK_RUNTIME_DIR
 # Private per-locker runtime directory for frame grabs (bounded, reused files).
-# Never a shared temporary directory: without a usable XDG_RUNTIME_DIR the
-# locker simply does not sample accents.
+# Never a shared temporary directory. It is optional: if it cannot be prepared,
+# the locker still locks and simply does not sample accents. Each step is
+# therefore best-effort and never stops the runner.
 if [[ "${XDG_RUNTIME_DIR:-}" == /* ]]; then
     base="$XDG_RUNTIME_DIR/aerial-lock"
     (umask 077; mkdir -p "$base") 2>/dev/null || true
-    if [[ -d "$base" && ! -L "$base" && -O "$base" ]]; then
-        chmod 700 "$base"
+    if [[ -d "$base" && ! -L "$base" && -O "$base" ]] && chmod 700 "$base" 2>/dev/null; then
         # Directories of lockers that are no longer running hold only stale frames.
         for stale in "$base"/locker-*; do
             [[ -d "$stale" && ! -L "$stale" && -O "$stale" ]] || continue
             pid=${stale##*/locker-}
             [[ "$pid" =~ ^[0-9]+$ && ! -e "/proc/$pid" ]] || continue
-            rm -f "$stale"/accent-*.jpg
+            rm -f "$stale"/accent-*.jpg 2>/dev/null || true
             rmdir "$stale" 2>/dev/null || true
         done
         own="$base/locker-$$"   # $$ stays the locker's PID across exec
         (umask 077; mkdir -p "$own") 2>/dev/null || true
-        if [[ -d "$own" && ! -L "$own" && -O "$own" ]]; then
-            chmod 700 "$own"
-            rm -f "$own"/accent-*.jpg
+        if [[ -d "$own" && ! -L "$own" && -O "$own" ]] && chmod 700 "$own" 2>/dev/null \
+                && rm -f "$own"/accent-*.jpg 2>/dev/null; then
             export AERIAL_LOCK_RUNTIME_DIR="$own"
         fi
     fi
@@ -43,4 +47,12 @@ export AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID=$$
 export QT_QPA_PLATFORM=wayland QSG_RHI_BACKEND=opengl QS_DISABLE_CRASH_HANDLER=1
 export QT_PLUGIN_PATH="$plugin_root${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_GENERIC_PLUGINS=AerialLockConnectionGuard
-exec qs -p "$shell_dir"
+qs_path=$(command -v qs 2>/dev/null || true)
+if [[ -z "$qs_path" || ! -f "$qs_path" || ! -x "$qs_path" ]]; then
+    printf 'aerial-lock-run: qs is not available\n' >&2
+    exit 72
+fi
+# bash drops the EXIT trap before exec, so a failed exec is handled here.
+exec "$qs_path" -p "$shell_dir" || true
+printf 'aerial-lock-run: qs could not be executed\n' >&2
+exit 72
