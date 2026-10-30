@@ -50,8 +50,10 @@ development launches share the same connection protection.
 - Both the installed supervisor and `Scripts/dev/run.sh` use the guarded runner.
   Bare `qs -p` production-shell launches are refused before engagement.
   Confirmed connection loss exits 70, running-monitor failure 71 and
-  pre-engagement guard failure 72. Exhausted guard failures give supervisor
-  exit 3 with an explicit never-engaged or uncertain-engagement report.
+  pre-engagement failure 72 (including a missing `qs`). Exhausted guard
+  failures give supervisor exit 3 and report whether those attempts never
+  engaged or their engagement is uncertain, without claiming a screen state
+  the supervisor cannot know.
   (`de1957b`, `74511ed`)
 
 ### Fixed

@@ -245,8 +245,11 @@ private:
         } else {
             if (m_guardFailed) {
                 if (m_onlyPreEngagementFailures)
-                    log("respawn limit reached: guard unavailable — the lock never engaged; "
-                        "the screen is NOT locked");
+                    // Only this episode is known: a lock left by an earlier
+                    // episode (e.g. a clientless one) may still be held.
+                    log("respawn limit reached: guard unavailable — these attempts did not engage a lock; "
+                        "the current screen state is unknown. Check the screen and recover from a TTY "
+                        "if needed (see README)");
                 else
                     log("respawn limit reached: guard failed — lock engagement not confirmed; "
                         "the screen may be unlocked. Recover manually from a TTY (see README)");

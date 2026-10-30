@@ -134,7 +134,7 @@ def main():
             assert lines.count(f"child finished: exit={child_exit}") == 3
             assert lines.count("respawn limit reached") == 1
             assert "staying locked" not in lines
-            assert ("the lock never engaged; the screen is NOT locked" if child_exit == 72
+            assert ("these attempts did not engage a lock; the current screen state is unknown" if child_exit == 72
                     else "lock engagement not confirmed; the screen may be unlocked") in lines
             if name == "failed-start": assert lines.count("child process error:") == 3
             outcomes[name + "_settled_once_three_attempts_exit3"] = True

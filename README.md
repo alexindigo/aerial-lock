@@ -200,7 +200,7 @@ supervisor outcome before assuming that the screen is protected:
 |---|---|
 | 0 | Clean completion, duplicate supervisor for the same session, or compositor gone. Not a lock-readiness signal. |
 | 2 | Other abnormal failures exhausted retries; no automatic unlock. Recover manually below. |
-| 3 | Guard unavailable or failed. If every attempt exited 72, the lock never engaged and the screen is **NOT locked**. If a monitor failed (71) or outcomes were mixed, engagement is not confirmed and the screen **may be unlocked**. Inspect the installation and recover from a TTY if needed. |
+| 3 | Guard unavailable or failed. If every attempt exited 72, none of this run's attempts engaged a lock, but the current screen state is **unknown**: a lock from an earlier run may still be held. If a monitor failed (71) or outcomes were mixed, engagement is not confirmed and the screen **may be unlocked**. Check the screen, inspect the installation and recover from a TTY if needed. |
 
 **From a TTY (or SSH), as the same user — manual recovery / diagnostics:**
 

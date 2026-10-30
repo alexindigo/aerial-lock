@@ -11,18 +11,18 @@ import tempfile
 supervisor = Path(sys.argv[1]).resolve(strict=True)
 runner_path = Path(sys.argv[2]).resolve(strict=True)
 cases = [
-    ("pre-engagement", [72, 72, 72], 3, "the lock never engaged; the screen is NOT locked"),
+    ("pre-engagement", [72, 72, 72], 3, "these attempts did not engage a lock; the current screen state is unknown"),
     ("monitor", [71, 71, 71], 3, "lock engagement not confirmed; the screen may be unlocked"),
     ("abnormal-then-monitor", [70, 71, 71], 3, "lock engagement not confirmed; the screen may be unlocked"),
     ("monitor-then-startup", [71, 72, 72], 3, "lock engagement not confirmed; the screen may be unlocked"),
     ("abnormal-then-startup", [70, 72, 72], 3, "lock engagement not confirmed; the screen may be unlocked"),
     ("abnormal", [70, 70, 70], 2, "NO automatic unlock"),
     ("unlock", [0], 0, "clean exit — done"),
-    ("missing-runner", None, 3, "the lock never engaged; the screen is NOT locked"),
-    ("missing-plugin", None, 3, "the lock never engaged; the screen is NOT locked"),
-    ("missing-qs", None, 3, "the lock never engaged; the screen is NOT locked"),
-    ("shell-not-found", [127, 127, 127], 3, "the lock never engaged; the screen is NOT locked"),
-    ("shell-not-executable", [126, 72, 127], 3, "the lock never engaged; the screen is NOT locked"),
+    ("missing-runner", None, 3, "these attempts did not engage a lock; the current screen state is unknown"),
+    ("missing-plugin", None, 3, "these attempts did not engage a lock; the current screen state is unknown"),
+    ("missing-qs", None, 3, "these attempts did not engage a lock; the current screen state is unknown"),
+    ("shell-not-found", [127, 127, 127], 3, "these attempts did not engage a lock; the current screen state is unknown"),
+    ("shell-not-executable", [126, 72, 127], 3, "these attempts did not engage a lock; the current screen state is unknown"),
     ("abnormal-then-not-found", [70, 127, 127], 3, "lock engagement not confirmed; the screen may be unlocked"),
 ]
 
@@ -125,6 +125,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory:
             assert "child process error" not in output, output
             assert output.count("child finished: exit=72") == 3, output
         if codes is not None and 71 in codes:
-            assert "the lock never engaged" not in output, output
+            assert "did not engage a lock" not in output, output
+        assert "NOT locked" not in output, output
         listener.close()
         print("SUPERVISOR_FAILURE_PASS", name)
