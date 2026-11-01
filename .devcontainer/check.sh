@@ -13,16 +13,26 @@ export GIT_CONFIG_KEY_0=safe.directory
 export GIT_CONFIG_VALUE_0="$PWD"
 
 Scripts/dev/qmllint.sh .
+
+# Partial staging must lint the content and shebang that will be committed.
+shell_root=.
+if [[ "${1:-}" == --hook ]]; then
+    shell_root=$(mktemp -d "${TMPDIR:-/var/tmp}/aerial-lock-index.XXXXXX")
+    trap 'rm -rf -- "$shell_root"' EXIT
+    git checkout-index --all --ignore-skip-worktree-bits --prefix="$shell_root/"
+fi
+
 # Use NUL-delimited tracked paths, including extensionless launchers and hooks.
 # Keep this in the shared entry point so the hook and CI discover the same set.
 git ls-files -z | {
     shell_scripts=()
     while IFS= read -r -d '' file; do
-        [[ -f "$file" ]] || continue
+        script="$shell_root/$file"
+        [[ -f "$script" ]] || continue
         first_line=''
-        IFS= read -r first_line < "$file" || true
+        IFS= read -r first_line < "$script" || true
         if [[ "$file" == *.sh || "$first_line" =~ ^\#!.*(/|[[:space:]])(ba)?sh([[:space:]]|$) ]]; then
-            shell_scripts+=("./$file")
+            shell_scripts+=("$script")
         fi
     done
     printf 'ShellCheck: %s scripts\n' "${#shell_scripts[@]}"
