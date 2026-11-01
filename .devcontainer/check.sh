@@ -37,7 +37,10 @@ git ls-files -z | {
     done
     printf 'ShellCheck: %s scripts\n' "${#shell_scripts[@]}"
     if ((${#shell_scripts[@]})); then
-        shellcheck -- "${shell_scripts[@]}"
+        (
+            cd -- "$shell_root"
+            shellcheck -x -- "${shell_scripts[@]}"
+        )
     fi
 }
 if [[ "${1:-}" == --hook ]]; then
