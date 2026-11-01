@@ -27,7 +27,7 @@ Item {
         function test_decode_follows_display_size() {
             var path = Qt.resolvedUrl("fixtures/avatar-large.svg").toString().replace(/^file:\/\//, "")
             var a = createTemporaryObject(avatarComponent, root, { "source": path })
-            var image = findByPredicate(a, function (it) { return it.sourceSize !== undefined })
+            var image = findChild(a, "avatarImage")
             verify(image !== null)
             tryCompare(image, "status", Image.Ready)
             compare(image.sourceSize.width, Math.ceil(a.width * image.Screen.devicePixelRatio))
@@ -53,10 +53,9 @@ Item {
         function test_initials_fallback_shape() {
             var a = createTemporaryObject(avatarComponent, root, { "loginName": "Test User", "cornerRadius": 20 })
             // Missing image -> initials plate; its plate radius must follow.
-            var plate = findByPredicate(a, function (it) {
-                return it && it.radius !== undefined && it.color !== undefined && it.visible
-            })
+            var plate = findChild(a, "avatarFallbackPlate")
             verify(plate !== null, "initials plate not found")
+            verify(plate.visible, "initials fallback is visible without an image")
             compare(plate.radius, 20, "plate follows the normalized radius")
             compare(a.initials, "TU")
         }
@@ -70,11 +69,15 @@ Item {
             var a = createTemporaryObject(avatarComponent, root,
                                           { "loginName": "Test User", "cornerRadius": 12,
                                             "source": path })
-            var image = findByPredicate(a, function (it) { return it.sourceSize !== undefined })
+            var image = findChild(a, "avatarImage")
             verify(image !== null)
             tryCompare(image, "status", Image.Ready)
-            var mask = findMask(a)
+            var mask = findChild(a, "avatarMaskCircle")
             verify(mask !== null, "image mask not found")
+            var plate = findChild(a, "avatarFallbackPlate")
+            verify(plate !== null)
+            verify(!plate.visible, "decoded image hides the fallback plate")
+            verify(mask !== plate, "mask identity does not depend on plate visibility")
             compare(mask.radius, 12, "mask follows the normalized radius")
             verify(mask.radius !== mask.width / 2, "mask is not circular under cornerRadius")
         }
@@ -85,29 +88,5 @@ Item {
             compare(a.effectiveRadius, 24)
         }
 
-        function findMask(item) {
-            // The image mask is the invisible layer source Rectangle.
-            for (var i = 0; i < item.children.length; i++) {
-                var c = item.children[i]
-                if (c && c.visible === false && c.radius !== undefined && c.width === item.width)
-                    return c
-                var nested = findMask(c)
-                if (nested)
-                    return nested
-            }
-            return null
-        }
-
-        function findByPredicate(item, pred) {
-            for (var i = 0; i < item.children.length; i++) {
-                var c = item.children[i]
-                if (pred(c))
-                    return c
-                var nested = findByPredicate(c, pred)
-                if (nested)
-                    return nested
-            }
-            return null
-        }
     }
 }

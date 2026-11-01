@@ -290,7 +290,7 @@ FocusScope {
 
             LockModule.AuthField {
                 id: field
-                objectName: "field"
+                objectName: "authField"
                 anchors {
                     left: parent.left
                     leftMargin: 36 * root.s
@@ -397,6 +397,7 @@ FocusScope {
     // Hover notice for unavailable affordances; never interactive.
     property string hoverNotice: ""
     Text {
+        objectName: "noticeLabel"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: footerBar.top
         anchors.bottomMargin: 8 * root.s

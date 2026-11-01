@@ -214,6 +214,7 @@ FocusScope {
 
                 LockModule.AuthField {
                     id: field
+                    objectName: "authField"
                     anchors { fill: parent; leftMargin: 6 * root.s; rightMargin: 6 * root.s }
                     context: root.context
                     textColor: "#101820"

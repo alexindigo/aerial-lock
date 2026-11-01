@@ -314,6 +314,7 @@ FocusScope {
                         Behavior on border.color { ColorAnimation { duration: 150 } }
 
                         Text {
+                            objectName: "slotMessageText"
                             anchors.centerIn: parent
                             width: parent.width - 40 * root.s
                             elide: Text.ElideRight
@@ -331,7 +332,7 @@ FocusScope {
 
                         LockModule.AuthField {
                             id: field
-                            objectName: "field"
+                            objectName: "authField"
                             anchors { fill: parent; leftMargin: 20 * root.s; rightMargin: 20 * root.s }
                             context: root.context
                             textColor: root.fieldText

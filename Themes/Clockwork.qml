@@ -180,6 +180,7 @@ FocusScope {
             layer.effect: FastBlur { radius: 2.2 * root.s }
 
             ScaleRing {
+                objectName: "minuteScaleSoft"
                 anchors.fill: parent
                 angle: root.minuteAngle
                 radius: clockContainer.minR
@@ -192,6 +193,7 @@ FocusScope {
             ScaleRing {
                 anchors.fill: parent
                 angle: root.secondAngle
+                objectName: "secondScaleSoft"
                 radius: clockContainer.secR
                 labelRadius: clockContainer.secR - 30 * root.s
                 majorW: 1.5 * root.s; majorH: 13 * root.s
@@ -210,6 +212,7 @@ FocusScope {
             ScaleRing {
                 anchors.fill: parent
                 angle: root.minuteAngle
+                objectName: "minuteScaleSharp"
                 radius: clockContainer.minR
                 labelRadius: clockContainer.minR - 35 * root.s
                 majorW: 2 * root.s; majorH: 18 * root.s
@@ -226,6 +229,7 @@ FocusScope {
                 minorW: 1 * root.s; minorH: 8 * root.s
                 labelSize: 16 * root.s
                 sharpOnly: true
+                objectName: "secondScaleSharp"
             }
         }
 
@@ -307,6 +311,7 @@ FocusScope {
     // Hover notice for unavailable controls; never interactive.
     property string hoverNotice: ""
     Text {
+        objectName: "noticeLabel"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 16 * root.s
@@ -390,7 +395,7 @@ FocusScope {
 
             LockModule.AuthField {
                 id: field
-                objectName: "field"
+                objectName: "authField"
                 anchors.fill: parent
                 context: root.context
                 textColor: root.dimText
@@ -548,6 +553,7 @@ FocusScope {
                 }
                 Text {
                     visible: isMajor
+                    objectName: ring.objectName + "Label" + index
                     property real nRad: ring.labelRadius
                     x: clockContainer.cx + nRad * Math.cos(disp) - width / 2
                     y: clockContainer.cy + nRad * Math.sin(disp) - height / 2

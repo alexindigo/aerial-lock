@@ -38,6 +38,7 @@ Item {
     // whenever the image is missing, unreadable, or still decoding.
     Rectangle {
         id: plate
+        objectName: "avatarFallbackPlate"
         anchors.fill: parent
         radius: root.effectiveRadius
         color: root.fallbackFill
@@ -83,6 +84,7 @@ Item {
 
     Image {
         id: img
+        objectName: "avatarImage"
         anchors.fill: parent
         source: root.source.length > 0 ? "file://" + root.source : ""
         asynchronous: true
@@ -102,6 +104,7 @@ Item {
 
     Rectangle {
         id: maskCircle
+        objectName: "avatarMaskCircle"
         width: root.width
         height: root.height
         radius: root.effectiveRadius

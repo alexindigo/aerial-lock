@@ -33,11 +33,7 @@ TestCase {
     }
 
     function player(background) {
-        for (var i = 0; i < background.children.length; i++) {
-            if (background.children[i].coreAvailable !== undefined)
-                return background.children[i]
-        }
-        return null
+        return findChild(background, "backgroundPlayer")
     }
 
     function test_core_failure_keeps_solid_scenery_and_reports_once() {

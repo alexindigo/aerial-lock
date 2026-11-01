@@ -40,6 +40,11 @@ construction and teardown warnings occur outside test functions and can escape
 to a nullable context while it is unavailable instead of relying on the implicit
 parent target or assigning `target` later in `init()`.
 
+Locate component internals by a unique, component-scoped `objectName` (using
+QtTest's `findChild` or a name-only traversal when counting instances). Assert
+visibility, geometry, text and interface properties only after selecting the
+named object; those mutable properties must not decide which object is tested.
+
 Use `-input Tests/tst_theme_host.qml` to select just one suite. The test-only
 `imports/Quickshell` modules let standalone QtTest load ThemeHost's types
 without Quickshell's executable-linked plugins. They supply only its inactive

@@ -52,7 +52,7 @@ Item {
             host = createTemporaryObject(hostComponent, root, { "context": ctx })
             // The synthetic writer stands in for the outgoing fallback.
             // Its real, inactive AuthField must not compete for the claim.
-            var fallbackField = findField(host)
+            var fallbackField = findChild(host, "authField")
             verify(fallbackField !== null)
             fallbackField._releasedForHandoff = true
             fallbackSpy = createTemporaryObject(spyComponent, root,
@@ -69,32 +69,11 @@ Item {
             wait(0)
         }
 
-        function findField(item) {
-            if (item._releasedForHandoff !== undefined)
-                return item
-            for (var i = 0; i < item.children.length; i++) {
-                var field = findField(item.children[i])
-                if (field)
-                    return field
-            }
-            return null
-        }
-
         function loadCandidate() {
             // Isolate the real Loader.onLoaded handoff path from config and
             // filesystem probing (covered by the nested-shell camera gate).
-            var lifecycle = null
-            var loader = null
-            for (var i = 0; i < host.resources.length; i++) {
-                var resource = host.resources[i]
-                if (resource.handoffPending !== undefined)
-                    lifecycle = resource
-            }
-            for (var j = 0; j < host.children.length; j++) {
-                var child = host.children[j]
-                if (child.setSource !== undefined)
-                    loader = child
-            }
+            var lifecycle = findChild(host, "themeLifecycle")
+            var loader = findChild(host, "themeCandidateLoader")
             verify(lifecycle !== null)
             verify(loader !== null)
             candidateLoader = loader

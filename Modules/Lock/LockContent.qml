@@ -46,6 +46,7 @@ Item {
             spacing: panel.spacing
 
             Text {
+                objectName: "statusText"
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: parent.width
                 wrapMode: Text.Wrap
@@ -74,6 +75,7 @@ Item {
 
                 AuthField {
                     id: authField
+                    objectName: "authField"
                     anchors {
                         fill: parent
                         leftMargin: 12

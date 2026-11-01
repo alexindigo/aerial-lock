@@ -113,6 +113,7 @@ Item {
 
     MpvPlayer {
         id: player
+        objectName: "backgroundPlayer"
         anchors.fill: parent
         enabled: false            // keys stay on the password field
         // Native readiness must be allowed before loading yields hasVideo.

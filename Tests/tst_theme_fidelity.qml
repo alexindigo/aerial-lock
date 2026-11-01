@@ -85,11 +85,12 @@ Item {
             close(position(), rest, "failure motion returns to its resting position")
         }
 
-        function collectStatusTexts(item, text, out) {
-            if (item.text === text && item.visible && item.opacity > 0 && item.height > 0)
-                out.push(item)
-            for (var i = 0; i < item.children.length; i++)
-                collectStatusTexts(item.children[i], text, out)
+        function visibleMessage(name, message) {
+            var label = region(name).obj
+            tryCompare(label, "text", message)
+            tryVerify(function () { return label.visible && label.opacity > 0 && label.height > 0 },
+                      500, name + ": the named consumer remains visible")
+            return label
         }
 
         function test_prompt_while_typing_data() {
@@ -114,11 +115,7 @@ Item {
             theme.focusInput()
             keyClick(Qt.Key_A)
             tryCompare(ctx.auth.input, "text", "a")
-            tryVerify(function () {
-                var texts = []
-                collectStatusTexts(theme, data.message, texts)
-                return texts.length > 0
-            }, 500, "non-routine instructions stay visible while entering a response")
+            visibleMessage("statusText", data.message)
         }
 
         function test_markup_message_is_literal_data() {
@@ -131,24 +128,22 @@ Item {
             load(data.filename)
             ctx.auth.status = "<b>Code</b> &amp; <i>token</i>"
             wait(300)
-            var texts = []
-            collectStatusTexts(theme, ctx.auth.status, texts)
-            verify(texts.length > 0, "the PAM message reaches a visible text consumer")
-            for (var i = 0; i < texts.length; i++) {
-                var text = texts[i]
-                var format = text.textFormat
-                var paintedWidth = text.contentWidth
-                var paintedHeight = text.contentHeight
-                waitForRendering(text)
-                // Compare the consumer's laid-out glyphs with an explicitly
-                // literal render, not just the value arriving in its binding.
-                text.textFormat = Text.PlainText
-                wait(100)
-                waitForRendering(text)
-                compare(paintedWidth, text.contentWidth, "rendered glyph width must be literal")
-                compare(paintedHeight, text.contentHeight, "rendered glyph height must be literal")
-                compare(format, Text.PlainText)
-            }
+            // MaterialYou shows this short, pre-typing message in its named
+            // placeholder slot; wrapped/typing instructions use statusText.
+            var messageName = data.filename === "MaterialYou.qml" ? "slotMessageText" : "statusText"
+            var text = visibleMessage(messageName, ctx.auth.status)
+            var format = text.textFormat
+            var paintedWidth = text.contentWidth
+            var paintedHeight = text.contentHeight
+            waitForRendering(text)
+            // Compare the consumer's laid-out glyphs with an explicitly
+            // literal render, not just the value arriving in its binding.
+            text.textFormat = Text.PlainText
+            wait(100)
+            waitForRendering(text)
+            compare(paintedWidth, text.contentWidth, "rendered glyph width must be literal")
+            compare(paintedHeight, text.contentHeight, "rendered glyph height must be literal")
+            compare(format, Text.PlainText)
         }
 
         function insideSurface(obj, what) {
@@ -192,18 +187,10 @@ Item {
                 insideSurface(region(submitNames[data.filename]).obj, "submit control")
             // Macintosh's submission surface is the field (Return), not a button.
             if (data.message.length > 0) {
-                var texts = []
-                collectStatusTexts(theme, data.message, texts)
-                verify(texts.length > 0, "wrapped status visible")
-                for (var i = 0; i < texts.length; i++)
-                    insideSurface(texts[i], "wrapped status")
+                insideSurface(visibleMessage("statusText", data.message), "wrapped status")
             }
             if (theme.hoverNotice !== undefined) {
-                var notices = []
-                collectStatusTexts(theme, theme.hoverNotice, notices)
-                verify(notices.length > 0, "hover notice visible")
-                for (var j = 0; j < notices.length; j++)
-                    insideSurface(notices[j], "hover notice")
+                insideSurface(visibleMessage("noticeLabel", theme.hoverNotice), "hover notice")
             }
         }
 
@@ -372,19 +359,19 @@ Item {
             close(field.w, 336 * s, "material field width")
             close(field.h, 52 * s, "material field height")
 
-            var gridObj = region("settingsGrid").obj
-            verify(gridObj.children.length >= 4, "material: four settings tiles")
-            var tile = gridObj.children[0]
-            close(tile.width, 180 * s, "material tile width")
-            close(tile.height, 76 * s, "material tile height")
+            var tileNames = ["powerTile", "sessionTile", "rebootTile", "sleepTile"]
+            for (var i = 0; i < tileNames.length; i++) {
+                var tile = region(tileNames[i]).obj
+                close(tile.width, 180 * s, tileNames[i] + ": material tile width")
+                close(tile.height, 76 * s, tileNames[i] + ": material tile height")
+                verify(tile.opacity < 1, tileNames[i] + ": visibly unavailable")
+            }
 
             var unlock = region("unlockPill")
             close(unlock.h, 38 * s, "material unlock pill height")
             var user = region("userPill")
             close(user.h, 38 * s, "material user pill height")
             disabledHonesty("userPill")
-            for (var i = 0; i < gridObj.children.length; i++)
-                verify(gridObj.children[i].opacity < 1, "material tile " + i + " visibly unavailable")
         }
 
         function test_materialyou_narrow_stacks() {
@@ -505,22 +492,16 @@ Item {
             // Minute-25 label sits at the reading axis: (cx + nRad, cy).
             var expectX = 40 * s + (320 - 35) * s
             var expectY = 800 / 2
-            var labels = []
-            collectScaleLabels(theme, 22 * s, "25", labels)
             // The sharp and soft layers co-locate the label at the axis.
-            verify(labels.length >= 1, "minute-scale 25 label present")
-            var center = labels[0].mapToItem(theme, labels[0].width / 2, labels[0].height / 2)
-            verify(Math.abs(center.x - expectX) < 2, "minute 25 label on the reading axis (x)")
-            verify(Math.abs(center.y - expectY) < 2, "minute 25 label on the reading axis (y)")
-        }
-
-        function collectScaleLabels(item, pixelSize, text, out) {
-            for (var i = 0; i < item.children.length; i++) {
-                var c = item.children[i]
-                if (c && c.font && Math.abs(c.font.pixelSize - pixelSize) < 0.5
-                        && c.text === text && c.visible)
-                    out.push(c)
-                collectScaleLabels(c, pixelSize, text, out)
+            var names = ["minuteScaleSharpLabel25", "minuteScaleSoftLabel25"]
+            for (var i = 0; i < names.length; i++) {
+                var label = region(names[i]).obj
+                compare(label.text, "25")
+                close(label.font.pixelSize, 22 * s, names[i] + ": minute label font size", 0.5)
+                verify(label.visible, names[i] + ": minute label visible")
+                var center = label.mapToItem(theme, label.width / 2, label.height / 2)
+                verify(Math.abs(center.x - expectX) < 2, names[i] + ": on the reading axis (x)")
+                verify(Math.abs(center.y - expectY) < 2, names[i] + ": on the reading axis (y)")
             }
         }
 
@@ -556,7 +537,7 @@ Item {
         function collectCores(item, out) {
             for (var i = 0; i < item.children.length; i++) {
                 var c = item.children[i]
-                if (c && typeof c.focusField === "function" && c.hasActiveFocus !== undefined)
+                if (c && c.objectName === "authField")
                     out.push(c)
                 collectCores(c, out)
             }

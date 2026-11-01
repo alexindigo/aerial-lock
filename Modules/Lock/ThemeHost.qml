@@ -46,6 +46,7 @@ Item {
 
     QtObject {
         id: internal
+        objectName: "themeLifecycle"
         property bool complete: false
         property bool settled: false
         property bool useTheme: false
@@ -243,6 +244,7 @@ Item {
 
     Loader {
         id: candidate
+        objectName: "themeCandidateLoader"
         anchors.fill: parent
         asynchronous: true
         // Settlement owns candidate lifetime, including an incubation that

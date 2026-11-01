@@ -84,12 +84,14 @@ FocusScope {
 
             LockModule.AuthField {
                 id: field
+                objectName: "authField"
                 anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
                 context: root.context
             }
         }
 
         Text {
+            objectName: "statusText"
             anchors.horizontalCenter: parent.horizontalCenter
             width: Math.min(root.width * 0.8, 420)
             visible: text.length > 0
