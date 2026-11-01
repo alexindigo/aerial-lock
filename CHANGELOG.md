@@ -3,6 +3,19 @@
 Notable user-facing changes are recorded here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Security
+
+- A duplicate `aerial-lock` for a session that already has a supervisor no
+  longer exits 0 just because that supervisor's name is taken. It asks the
+  supervisor on duty for its actual lock state — each locker attempt reports
+  the compositor's lock confirmation over a channel only that attempt can use —
+  and exits 0 only once the lock is confirmed, waiting up to 10 seconds while
+  it is being engaged. Otherwise it exits 4 (lock engagement not confirmed).
+  When retries are exhausted with exit 2, the supervisor reports that the
+  session stays locked only if an attempt confirmed the lock.
+
 ## [0.1.0-alpha.1] — 2026-10-29
 
 First public alpha, covering the project's development from September through

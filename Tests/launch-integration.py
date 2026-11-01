@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Owned-VM staged supervisor and exec-wrapper outcome checks."""
+"""Owned-VM staged supervisor and exec-wrapper outcome checks.
+
+A duplicate `aerial-lock` for the same session runs beside every supervised
+attempt on one private bus: it must wait while the real locker is engaging and
+exit 0 only once that locker confirmed the session lock, and exit 4 beside a
+supervisor whose attempts never engage.
+"""
 from collections import deque
 import argparse
 import importlib.util
 import json
 import os
 from pathlib import Path
+import select
 import shlex
 import signal
+import subprocess
 import threading
 import time
 from types import SimpleNamespace
@@ -42,6 +50,8 @@ def main():
             raise RuntimeError("staged prefix is outside the owned feature workspace")
         session.stage = stage
     supervisor = None
+    duplicate = None
+    bus = None
     qs_pid = None
     reader = None
     passed = False
@@ -67,6 +77,14 @@ def main():
                    AERIAL_LOCK_PLUGIN_ROOT=str(stage / "lib/aerial-lock/qt-plugins"), WAYLAND_DEBUG="1",
                    AERIAL_LOCK_CONNECTION_GUARD_PID="stale-readiness",
                    AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID="1", QT_WAYLAND_RECONNECT="0")
+        # One private bus shared by each supervisor and its duplicate.
+        with (session.output / "bus.log").open("w") as bus_log:
+            bus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1",
+                                    "--address=unix:path=" + str(session.output / "bus")],
+                                   stdout=subprocess.PIPE, stderr=bus_log, text=True, start_new_session=True)
+        if not select.select([bus.stdout], [], [], 10)[0]:
+            raise RuntimeError("private bus did not start")
+        env["DBUS_SESSION_BUS_ADDRESS"] = bus.stdout.readline().strip()
         session.assert_control()
         log = driver.ObservedProcess.__new__(driver.ObservedProcess)
         log.lines = deque(maxlen=4096)
@@ -78,8 +96,11 @@ def main():
         reader = threading.Thread(target=consume, daemon=True)
         log.thread = reader
         reader.start()
-        supervisor = driver.ObservedProcess(["dbus-run-session", "--", str(stage / "bin/aerial-lock-supervisor")],
+        supervisor = driver.ObservedProcess([str(stage / "bin/aerial-lock-supervisor")],
             env, session.output / "supervisor.log")
+        supervisor.wait_line(lambda line: "launching locker, attempt 1/3" in line)
+        duplicate = driver.ObservedProcess([str(stage / "bin/aerial-lock-supervisor")],
+            env, session.output / "duplicate.log")
         # The shim execs the common runner, which execs qs. All three share the
         # supervisor's one QProcess child PID; no launcher-owned second qs fork.
         deadline = time.monotonic() + 15
@@ -94,6 +115,12 @@ def main():
             time.sleep(0.01)
         if qs_pid is None: raise RuntimeError("staged supervised qs NOT_EXERCISED")
         log.wait_line(lambda line: "ext_session_lock_v1" in line and ".locked()" in line)
+        # Collect the duplicate's outcome without raising while the lock is
+        # held; it is asserted only after the real-PAM unlock below.
+        try:
+            duplicate_exit = duplicate.finish(15)
+        except RuntimeError as error:
+            duplicate_exit = repr(error)
         maps = Path(f"/proc/{qs_pid}/maps").read_text()
         assert "libMpvQt" not in maps and "libmpvqml.so" not in maps
         assert str(stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockConnectionGuard.so") in maps
@@ -102,6 +129,8 @@ def main():
         assert environment[b"AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID"] == str(qs_pid).encode()
         assert b"AERIAL_LOCK_CONNECTION_GUARD_PID" not in environment
         assert b"QT_WAYLAND_RECONNECT" not in environment
+        channel = Path(env["XDG_RUNTIME_DIR"]) / "aerial-lock" / f"supervisor-{supervisor.process.pid}.sock"
+        assert environment[b"AERIAL_LOCK_ENGAGEMENT_SOCKET"] == str(channel).encode()
         assert environment[b"QS_DISABLE_CRASH_HANDLER"] == b"1"
         session.type_and_submit()
         log.wait_line(lambda line: ".unlock_and_destroy()" in line, 20)
@@ -109,10 +138,19 @@ def main():
         assert not Path(f"/proc/{qs_pid}").exists()
         supervisor.wait_line(lambda line: "child finished: exit=0 status=0" in line)
         supervisor.wait_line(lambda line: "clean exit — done" in line)
+        supervisor.wait_line(lambda line: "attempt 1: the locker confirmed the session lock" in line)
+        supervisor.wait_line(lambda line: "state: ended" in line)
+        assert not channel.exists(), "the supervisor removes its engagement channel"
         reader.join(2)
+        duplicate_log = (session.output / "duplicate.log").read_text()
+        assert duplicate_exit == 0, (duplicate_exit, duplicate_log)
+        assert "waiting for the supervisor on duty to confirm the lock (state: engaging)" in duplicate_log
+        assert "the supervisor on duty confirms its locker holds the session lock" in duplicate_log
+        assert "launching locker" not in duplicate_log
         session.desktop()
         outcomes = {"stage": str(stage), "supervised_no_video_real_pam_unlock0_desktop": True,
-                    "same_pid_exec_owner": qs_pid, "stale_readiness_reconnect_removed": True}
+                    "same_pid_exec_owner": qs_pid, "stale_readiness_reconnect_removed": True,
+                    "duplicate_waited_engaging_then_confirmed_exit0": True}
         plugin_root = str(stage / "lib/aerial-lock/qt-plugins")
         for name, program, plugin, fault, child_exit in (
                 ("failed-start", str(session.output / "missing-runner"), plugin_root, None, 72),
@@ -125,9 +163,16 @@ def main():
             if fault:
                 failure_env.update(LD_PRELOAD=str(root / "build/debug/aerial-tests/libfull-caller-faults.so"),
                                    AERIAL_TEST_FULL_CALLER_FAULT=fault)
-            supervisor = driver.ObservedProcess(["dbus-run-session", "--", str(stage / "bin/aerial-lock-supervisor")],
+            supervisor = driver.ObservedProcess([str(stage / "bin/aerial-lock-supervisor")],
                                                 failure_env, session.output / (name + ".log"))
+            supervisor.wait_line(lambda line: "launching locker, attempt 1/3" in line)
+            duplicate = driver.ObservedProcess([str(stage / "bin/aerial-lock-supervisor")],
+                                               failure_env, session.output / (name + "-duplicate.log"))
             assert supervisor.finish(15) == 3
+            assert duplicate.finish(20) == 4
+            duplicate_log = (session.output / (name + "-duplicate.log")).read_text()
+            assert "lock engagement not confirmed" in duplicate_log and "launching locker" not in duplicate_log
+            assert "confirms its locker holds the session lock" not in duplicate_log
             lines = (session.output / (name + ".log")).read_text()
             # Preserve the existing implementation's total-three-attempt bound.
             assert lines.count("launching locker, attempt") == 3
@@ -137,7 +182,7 @@ def main():
             assert ("these attempts did not engage a lock; the current screen state is unknown" if child_exit == 72
                     else "lock engagement not confirmed; the screen may be unlocked") in lines
             if name == "failed-start": assert lines.count("child process error:") == 3
-            outcomes[name + "_settled_once_three_attempts_exit3"] = True
+            outcomes[name + "_settled_once_three_attempts_exit3_duplicate_exit4"] = True
         (session.output / "launch-result.json").write_text(json.dumps(outcomes, indent=2))
         passed = True
         print(json.dumps({"results": str(session.output), "outcomes": outcomes}), flush=True)
@@ -152,10 +197,14 @@ def main():
                 signal.signal(sig, signal.SIG_IGN)
             print(json.dumps(receipt), flush=True)
             while Path(f"/proc/{qs_pid}").exists(): time.sleep(1)
-        if supervisor and supervisor.process.poll() is None:
-            session.assert_control()
-            supervisor.process.terminate()
-            supervisor.finish(5)
+        for process in (duplicate, supervisor):
+            if process and process.process.poll() is None:
+                session.assert_control()
+                process.process.terminate()
+                process.finish(5)
+        if bus and bus.poll() is None:
+            bus.terminate()
+            bus.wait(10)
         session.cleanup()
         (session.output / "result.json").write_text(json.dumps({"exit": 0 if passed else 1}, indent=2))
 

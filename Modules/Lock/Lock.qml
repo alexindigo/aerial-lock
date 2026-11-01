@@ -14,6 +14,8 @@ Scope {
 
     property bool locked: true
     property bool unlockHandled: false
+    // The compositor's ext-session-lock `locked` confirmation for this lock.
+    readonly property bool secure: sessionLock.secure
 
     // d43: the response accepted from the shared draft, queued for PAM's
     // first prompt. null = no queued response (distinct from an empty

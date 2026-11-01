@@ -7,3 +7,4 @@ Compositor 1.0 Compositor.qml
 SourceCache 1.0 SourceCache.qml
 LockContext 1.0 LockContext.qml
 AuthInputState 1.0 AuthInputState.qml
+EngagementReport 1.0 EngagementReport.qml

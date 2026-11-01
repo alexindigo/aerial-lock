@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exit-status timing distinguishes a refused lock from uncertain engagement."""
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -16,7 +17,9 @@ cases = [
     ("abnormal-then-monitor", [70, 71, 71], 3, "lock engagement not confirmed; the screen may be unlocked"),
     ("monitor-then-startup", [71, 72, 72], 3, "lock engagement not confirmed; the screen may be unlocked"),
     ("abnormal-then-startup", [70, 72, 72], 3, "lock engagement not confirmed; the screen may be unlocked"),
-    ("abnormal", [70, 70, 70], 2, "NO automatic unlock"),
+    ("abnormal", [70, 70, 70], 2, "no attempt confirmed the lock; the current screen state is unknown"),
+    # Only an attempt that confirmed the lock lets exit 2 say "staying locked".
+    ("engaged", [70, 70, 70], 2, "staying locked. NO automatic unlock"),
     ("unlock", [0], 0, "clean exit — done"),
     ("missing-runner", None, 3, "these attempts did not engage a lock; the current screen state is unknown"),
     ("missing-plugin", None, 3, "these attempts did not engage a lock; the current screen state is unknown"),
@@ -95,10 +98,28 @@ with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory:
         listener.listen(16)
         stub = case / "runner"
         if codes is not None:
+            report = ""
+            if name == "engaged":
+                # Confirm the lock over the supervisor's channel, then die only
+                # once the supervisor itself reports the confirmation.
+                service = "org.aeriallock.Supervisor.s" + hashlib.sha256(
+                    os.path.realpath(case / "wayland").encode()).hexdigest()[:32]
+                report = ("import os, socket, subprocess, time\n"
+                          "s = socket.socket(socket.AF_UNIX)\n"
+                          "s.connect(os.environ['AERIAL_LOCK_ENGAGEMENT_SOCKET'])\n"
+                          "s.sendall(b'locked\\n')\n"
+                          "for _ in range(200):\n"
+                          "    r = subprocess.run(['busctl', '--address=' + os.environ['DBUS_SESSION_BUS_ADDRESS'], 'call', " + repr(service) + ", "
+                          "'/org/aeriallock/Supervisor', 'org.aeriallock.Supervisor', 'State'],"
+                          " capture_output=True, text=True, timeout=5)\n"
+                          "    if r.stdout.strip() == 's \"locked\"': break\n"
+                          "    time.sleep(0.05)\n"
+                          "else: raise SystemExit(99)\n")
             stub.write_text("#!/usr/bin/python3\nfrom pathlib import Path\n"
                             f"p = Path({str(case / 'count')!r})\n"
                             "n = int(p.read_text()) if p.exists() else 0\n"
                             "p.write_text(str(n + 1))\n"
+                            + report +
                             f"raise SystemExit({codes!r}[n])\n")
             stub.chmod(0o700)
         env = {k: v for k, v in os.environ.items()
@@ -118,8 +139,10 @@ with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory:
         assert result.returncode == expected, (name, result.returncode, output)
         assert message in output, (name, output)
         assert output.count("launching locker, attempt") == (1 if name == "unlock" else 3), output
-        if expected == 3:
+        if expected == 3 or name != "engaged":
             assert "staying locked" not in output, output
+        if expected == 2:
+            assert "NO automatic unlock" in output, output
         if name in ("missing-plugin", "missing-qs"):
             # The real runner must run and refuse, not fail to start.
             assert "child process error" not in output, output

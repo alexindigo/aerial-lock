@@ -19,22 +19,44 @@
  *   exit 71          → guard monitor failed; engagement is unknown
  *   exit != 0        → respawn under limit; at limit, guard failures exit 3,
  *                      other failures exit 2. No automatic unlock.
+ *
+ * Engagement state is never inferred from a running process or a held bus
+ * name. Each locker attempt reports the compositor's lock confirmation over a
+ * supervisor-owned channel that only that attempt's process is accepted on;
+ * the supervisor publishes the result as State() on its session-scoped name.
+ * A duplicate invocation for the same session exits 0 only after that State()
+ * says "locked"; anything else it reports as not confirmed (exit 4).
  */
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
+#include <QDBusError>
+#include <QDBusMessage>
+#include <QDBusReply>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
+#include <QSocketNotifier>
 #include <QTextStream>
+#include <QThread>
 #include <QTimer>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <utility>
+
+#include <dirent.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #include <wayland-client.h>
 
@@ -51,6 +73,24 @@
 static const int RESPAWN_LIMIT = 3;
 static const int RESPAWN_BACKOFF_MS = 1500;
 static const char *SUPERVISOR_DBUS_NAME = "org.aeriallock.Supervisor";
+static const char *SUPERVISOR_OBJECT_PATH = "/org/aeriallock/Supervisor";
+static const char *SUPERVISOR_INTERFACE = "org.aeriallock.Supervisor";
+// A duplicate invocation waits at most this long for the supervisor on duty to
+// move from "engaging" to "locked" (a slow locker start or a pending respawn).
+static const int ENGAGEMENT_CONFIRM_WAIT_MS = 10000;
+static const int ENGAGEMENT_POLL_MS = 200;
+// Duplicate invocation whose session lock could not be confirmed.
+static const int DUPLICATE_UNCONFIRMED_EXIT = 4;
+// Passed to each locker attempt: where to report its lock confirmation.
+static const char *ENGAGEMENT_SOCKET_ENV = "AERIAL_LOCK_ENGAGEMENT_SOCKET";
+static const QByteArray ENGAGEMENT_LOCKED_REPORT = QByteArrayLiteral("locked\n");
+
+static void logLine(const QString &msg)
+{
+    QTextStream out(stderr);
+    out << "aerial-lock-supervisor: " << msg << "\n";
+    out.flush();
+}
 
 // The protected resource is one compositor session, identified by the
 // Wayland socket a client started from this environment connects to
@@ -86,27 +126,53 @@ static QString supervisorServiceName(const QString &socket)
 class Supervisor : public QObject
 {
     Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.aeriallock.Supervisor")
 public:
-    Supervisor()
-    {
-        m_sessionSocket = sessionSocketPath();
-        if (m_sessionSocket.isEmpty()) {
-            log("cannot identify the Wayland session to protect "
-                "(WAYLAND_DISPLAY is relative and XDG_RUNTIME_DIR is unset) — exiting");
-            std::exit(1);
-        }
-        QDBusConnection bus = QDBusConnection::sessionBus();
-        if (!bus.interface()->registerService(supervisorServiceName(m_sessionSocket))) {
-            log(QStringLiteral("another supervisor is on duty for %1 — exiting").arg(m_sessionSocket));
-            // std::exit, not QCoreApplication::exit: the event loop hasn't
-            // started yet, so Qt's quit() would be a no-op here.
-            std::exit(0);
-        }
+    // engaging: a locker attempt is starting, respawning or running without
+    //           (or no longer with) a confirmed lock.
+    // locked:   the current attempt's locker reported ext-session-lock's
+    //           `locked` event and is still alive and connected.
+    // failed:   respawns ran out (exit 2/3); no lock is maintained by us.
+    // ended:    the episode finished (unlock, refusal, compositor gone).
+    enum class LockState { Engaging, Locked, Failed, Ended };
 
+    explicit Supervisor(const QString &sessionSocket)
+        : m_sessionSocket(sessionSocket)
+    {
+    }
+
+    ~Supervisor() override
+    {
+        closeReport();
+        closeChannel();
+    }
+
+    // Runs only after this process owns the session's bus name.
+    void start()
+    {
+        QString why;
+        if (!openChannel(&why))
+            log(QStringLiteral("engagement channel unavailable (%1) — locking anyway, but a duplicate "
+                               "invocation cannot confirm this lock").arg(why));
         m_lockerCommand = lockerCommandLine();
         m_attempt = 0;
         launch();
     }
+
+    static QString stateName(LockState state)
+    {
+        switch (state) {
+        case LockState::Engaging: return QStringLiteral("engaging");
+        case LockState::Locked: return QStringLiteral("locked");
+        case LockState::Failed: return QStringLiteral("failed");
+        case LockState::Ended: return QStringLiteral("ended");
+        }
+        return QStringLiteral("failed");
+    }
+
+public slots:
+    // org.aeriallock.Supervisor.State — this episode's actual lock state.
+    Q_SCRIPTABLE QString State() const { return stateName(m_state); }
 
 private:
     QString lockerCommandLine()
@@ -123,6 +189,10 @@ private:
     {
         m_attempt++;
         m_attemptSettled = false;
+        // A new attempt has confirmed nothing yet, whatever an earlier one did.
+        closeReport();
+        m_reportAccepted = false;
+        setState(LockState::Engaging);
         m_video = nextVideo();
 
         // On Hyprland a respawned locker is refused without the
@@ -151,6 +221,10 @@ private:
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         if (!m_video.isEmpty())
             env.insert(QStringLiteral("AERIAL_LOCK_VIDEO"), m_video);
+        // Never let an inherited value point this attempt at another channel.
+        env.remove(QString::fromLatin1(ENGAGEMENT_SOCKET_ENV));
+        if (m_listenFd >= 0)
+            env.insert(QString::fromLatin1(ENGAGEMENT_SOCKET_ENV), m_channelPath);
         m_child->setProcessEnvironment(env);
         QProcess *const child = m_child;
         connect(m_child, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -197,6 +271,10 @@ private:
         if (completed) completed->deleteLater();
         log(QStringLiteral("child finished: exit=%1 status=%2")
                 .arg(exitCode).arg(status));
+        // A locker that is gone confirms nothing; the next attempt must report anew.
+        closeReport();
+        if (m_state == LockState::Locked)
+            setState(LockState::Engaging);
 
         // Ordering guard (load-bearing): compositor death is checked FIRST.
         // When the compositor dies the locker dies too, and the two signals
@@ -256,22 +334,211 @@ private:
                 finishEpisode(3);
                 return;
             }
-            // Respawns ran out. There is NO automatic unlock — stay locked
-            // and escalate loudly. Manual recovery is aerial-unlock from a
-            // TTY/ops (see README).
-            log("respawn limit reached — staying locked. NO automatic unlock. "
-                "Recover manually: aerial-unlock from a TTY (see README)");
+            // Respawns ran out. There is NO automatic unlock. Only an attempt
+            // that confirmed the lock lets us say the session stays locked
+            // (ext-session-lock keeps a confirmed lock after its client dies).
+            // Manual recovery is aerial-unlock from a TTY/ops (see README).
+            if (m_episodeEngaged)
+                log("respawn limit reached — staying locked. NO automatic unlock. "
+                    "Recover manually: aerial-unlock from a TTY (see README)");
+            else
+                log("respawn limit reached — no attempt confirmed the lock; the current screen state is "
+                    "unknown. NO automatic unlock. Check the screen and recover manually from a TTY "
+                    "if needed (see README)");
             finishEpisode(2);
         }
     }
 
     void finishEpisode(int code)
     {
+        closeReport();
+        setState(code == 0 ? LockState::Ended : LockState::Failed);
         if (m_hyprFlagSet) {
             setHyprlandRestoreFlag(false);
             m_hyprFlagSet = false;
         }
         QCoreApplication::exit(code);
+    }
+
+    void setState(LockState state)
+    {
+        if (m_state == state) return;
+        m_state = state;
+        log(QStringLiteral("state: %1").arg(stateName(state)));
+    }
+
+    // ---- engagement channel -------------------------------------------------
+    // A private Unix socket under $XDG_RUNTIME_DIR/aerial-lock (the runner's
+    // 0700 per-user directory). Only a connection whose SO_PEERCRED process is
+    // the current attempt's child is accepted, once per attempt; it confirms
+    // the lock by sending exactly "locked\n" and withdraws it by closing.
+
+    static QByteArray channelBase()
+    {
+        const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
+        if (!runtime.startsWith('/')) return QByteArray();
+        return runtime + "/aerial-lock";
+    }
+
+    static bool ownedEntry(const QByteArray &path, mode_t type)
+    {
+        struct stat info {};
+        return lstat(path.constData(), &info) == 0 && (info.st_mode & S_IFMT) == type
+            && info.st_uid == getuid();
+    }
+
+    // Sockets of supervisors that are no longer running are stale.
+    static void removeStaleChannels(const QByteArray &base)
+    {
+        static const QRegularExpression name(QStringLiteral("^supervisor-([0-9]+)\\.sock$"));
+        DIR *directory = ::opendir(base.constData());
+        if (!directory) return;
+        QList<QByteArray> stale;
+        while (const dirent *entry = ::readdir(directory)) {
+            const QRegularExpressionMatch match = name.match(QString::fromLatin1(entry->d_name));
+            if (!match.hasMatch()) continue;
+            if (QFileInfo::exists(QStringLiteral("/proc/") + match.captured(1))) continue;
+            stale.append(base + '/' + QByteArray(entry->d_name));
+        }
+        ::closedir(directory);
+        for (const QByteArray &path : std::as_const(stale))
+            if (ownedEntry(path, S_IFSOCK)) ::unlink(path.constData());
+    }
+
+    bool openChannel(QString *why)
+    {
+        const QByteArray base = channelBase();
+        if (base.isEmpty()) { *why = QStringLiteral("XDG_RUNTIME_DIR is not an absolute path"); return false; }
+        if (::mkdir(base.constData(), 0700) != 0 && errno != EEXIST) {
+            *why = QStringLiteral("cannot create %1: %2").arg(QFile::decodeName(base), QString::fromLocal8Bit(strerror(errno)));
+            return false;
+        }
+        if (!ownedEntry(base, S_IFDIR) || ::chmod(base.constData(), 0700) != 0) {
+            *why = QStringLiteral("%1 is not a private directory of this user").arg(QFile::decodeName(base));
+            return false;
+        }
+        removeStaleChannels(base);
+        const QByteArray path = base + "/supervisor-" + QByteArray::number(qint64(getpid())) + ".sock";
+        sockaddr_un address {};
+        address.sun_family = AF_UNIX;
+        if (size_t(path.size()) >= sizeof(address.sun_path)) {
+            *why = QStringLiteral("socket path is too long: %1").arg(QFile::decodeName(path));
+            return false;
+        }
+        std::memcpy(address.sun_path, path.constData(), size_t(path.size()));
+        // A socket left by an earlier holder of this PID is stale by definition.
+        if (ownedEntry(path, S_IFSOCK)) ::unlink(path.constData());
+        const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+        if (fd < 0 || ::bind(fd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0
+            || ::listen(fd, 4) != 0) {
+            *why = QStringLiteral("cannot listen on %1: %2").arg(QFile::decodeName(path), QString::fromLocal8Bit(strerror(errno)));
+            if (fd >= 0) ::close(fd);
+            return false;
+        }
+        m_listenFd = fd;
+        m_channelPath = QFile::decodeName(path);
+        m_listenNotifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+        connect(m_listenNotifier, &QSocketNotifier::activated, this, [this] { acceptReports(); });
+        return true;
+    }
+
+    void closeChannel()
+    {
+        if (m_listenFd < 0) return;
+        delete m_listenNotifier;
+        m_listenNotifier = nullptr;
+        ::close(m_listenFd);
+        m_listenFd = -1;
+        ::unlink(QFile::encodeName(m_channelPath).constData());
+    }
+
+    void acceptReports()
+    {
+        for (;;) {
+            const int fd = ::accept4(m_listenFd, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
+            if (fd < 0) {
+                if (errno == EINTR || errno == ECONNABORTED) continue;
+                if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                    // A persistent failure (e.g. no descriptors) would spin the
+                    // event loop; stop listening — nothing can confirm a lock now.
+                    log(QStringLiteral("engagement channel failed: %1 — a duplicate invocation cannot "
+                                       "confirm this lock").arg(QString::fromLocal8Bit(strerror(errno))));
+                    m_listenNotifier->setEnabled(false);
+                }
+                return;
+            }
+            ucred peer {};
+            socklen_t size = sizeof(peer);
+            const bool known = ::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &size) == 0
+                && size == sizeof(peer);
+            const qint64 child = m_child && !m_attemptSettled ? m_child->processId() : 0;
+            if (!known || peer.uid != getuid() || child <= 0 || qint64(peer.pid) != child) {
+                log(QStringLiteral("ignored an engagement report from pid %1: not the current locker")
+                        .arg(known ? qint64(peer.pid) : -1));
+                ::close(fd);
+                continue;
+            }
+            if (m_reportAccepted) {
+                log(QStringLiteral("ignored a second engagement connection from attempt %1").arg(m_attempt));
+                ::close(fd);
+                continue;
+            }
+            m_reportAccepted = true;
+            m_reportFd = fd;
+            m_reportBuffer.clear();
+            m_reportNotifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
+            connect(m_reportNotifier, &QSocketNotifier::activated, this, [this] { readReport(); });
+        }
+    }
+
+    void readReport()
+    {
+        char chunk[64];
+        for (;;) {
+            const ssize_t count = ::recv(m_reportFd, chunk, sizeof(chunk), 0);
+            if (count < 0) {
+                if (errno == EINTR) continue;
+                if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+                withdrawReport(QStringLiteral("report connection failed"));
+                return;
+            }
+            if (count == 0) {
+                withdrawReport(QStringLiteral("the locker withdrew its lock confirmation"));
+                return;
+            }
+            m_reportBuffer.append(chunk, count);
+            // Exactly one "locked\n" per attempt; anything else is a protocol
+            // violation and never counts as engagement.
+            if (m_state == LockState::Locked || !ENGAGEMENT_LOCKED_REPORT.startsWith(m_reportBuffer)) {
+                withdrawReport(QStringLiteral("malformed engagement report"));
+                return;
+            }
+            if (m_reportBuffer == ENGAGEMENT_LOCKED_REPORT) {
+                m_episodeEngaged = true;
+                log(QStringLiteral("attempt %1: the locker confirmed the session lock").arg(m_attempt));
+                setState(LockState::Locked);
+            }
+        }
+    }
+
+    void withdrawReport(const QString &reason)
+    {
+        log(QStringLiteral("attempt %1: %2").arg(m_attempt).arg(reason));
+        closeReport();
+        if (m_state == LockState::Locked)
+            setState(LockState::Engaging);
+    }
+
+    void closeReport()
+    {
+        if (m_reportFd < 0) return;
+        // Never delete a notifier from inside its own activation.
+        m_reportNotifier->setEnabled(false);
+        m_reportNotifier->deleteLater();
+        m_reportNotifier = nullptr;
+        ::close(m_reportFd);
+        m_reportFd = -1;
+        m_reportBuffer.clear();
     }
 
     // The compositor connection is the ordering guard's source of truth:
@@ -306,12 +573,7 @@ private:
         return p.exitCode() == 0;
     }
 
-    void log(const QString &msg)
-    {
-        QTextStream out(stderr);
-        out << "aerial-lock-supervisor: " << msg << "\n";
-        out.flush();
-    }
+    static void log(const QString &msg) { logLine(msg); }
 
     QProcess *m_child = nullptr;
     QString m_sessionSocket;
@@ -323,12 +585,117 @@ private:
     bool m_attemptSettled = false;
     bool m_onlyPreEngagementFailures = true;
     bool m_guardFailed = false;
+    LockState m_state = LockState::Engaging;
+    bool m_episodeEngaged = false;
+    int m_listenFd = -1;
+    QString m_channelPath;
+    QSocketNotifier *m_listenNotifier = nullptr;
+    bool m_reportAccepted = false;
+    int m_reportFd = -1;
+    QSocketNotifier *m_reportNotifier = nullptr;
+    QByteArray m_reportBuffer;
 };
+
+// Only printable state names are echoed; anything else is reported as malformed.
+static QString printableState(const QString &state)
+{
+    static const QRegularExpression word(QStringLiteral("^[a-z]{1,32}$"));
+    return word.match(state).hasMatch() ? QStringLiteral("\"%1\"").arg(state)
+                                        : QStringLiteral("a malformed state");
+}
+
+// A duplicate invocation: another process owns this session's supervisor
+// name. Owning the name proves nothing about the screen, so ask the owner for
+// its actual engagement state. Exit 0 only on "locked"; wait (bounded) while
+// it is "engaging"; every other outcome — an error or no reply, a malformed
+// reply, an unknown or terminal state, the deadline — is "not confirmed".
+static int confirmSupervisorOnDuty(const QDBusConnection &bus, const QString &service,
+                                   const QString &session)
+{
+    logLine(QStringLiteral("another supervisor is on duty for %1 — confirming its lock engagement")
+                .arg(session));
+    const QString unconfirmed = QStringLiteral(
+        " — lock engagement not confirmed; the screen may be unlocked. Exiting %1")
+            .arg(DUPLICATE_UNCONFIRMED_EXIT);
+    const QDeadlineTimer deadline(ENGAGEMENT_CONFIRM_WAIT_MS);
+    bool waiting = false;
+    for (;;) {
+        if (waiting && deadline.hasExpired()) {
+            logLine(QStringLiteral("the supervisor on duty did not confirm the lock within %1 ms")
+                        .arg(ENGAGEMENT_CONFIRM_WAIT_MS) + unconfirmed);
+            return DUPLICATE_UNCONFIRMED_EXIT;
+        }
+        QDBusMessage call = QDBusMessage::createMethodCall(
+            service, QString::fromLatin1(SUPERVISOR_OBJECT_PATH),
+            QString::fromLatin1(SUPERVISOR_INTERFACE), QStringLiteral("State"));
+        call.setAutoStartService(false); // ask the owner; never activate one
+        const int timeout = int(qBound(qint64(1), deadline.remainingTime(), qint64(ENGAGEMENT_CONFIRM_WAIT_MS)));
+        const QDBusMessage reply = bus.call(call, QDBus::Block, timeout);
+        if (reply.type() != QDBusMessage::ReplyMessage) {
+            logLine(QStringLiteral("the supervisor on duty gave no valid state (%1)")
+                        .arg(reply.errorName().isEmpty() ? QStringLiteral("no reply") : reply.errorName())
+                    + unconfirmed);
+            return DUPLICATE_UNCONFIRMED_EXIT;
+        }
+        const QList<QVariant> arguments = reply.arguments();
+        if (reply.signature() != QLatin1String("s") || arguments.size() != 1
+            || arguments.first().metaType().id() != QMetaType::QString) {
+            logLine(QStringLiteral("the supervisor on duty sent a malformed state reply") + unconfirmed);
+            return DUPLICATE_UNCONFIRMED_EXIT;
+        }
+        const QString state = arguments.first().toString();
+        if (state == Supervisor::stateName(Supervisor::LockState::Locked)) {
+            logLine(QStringLiteral("the supervisor on duty confirms its locker holds the session lock — exiting"));
+            return 0;
+        }
+        if (state != Supervisor::stateName(Supervisor::LockState::Engaging)) {
+            logLine(QStringLiteral("the supervisor on duty reports %1").arg(printableState(state)) + unconfirmed);
+            return DUPLICATE_UNCONFIRMED_EXIT;
+        }
+        if (!waiting) {
+            logLine(QStringLiteral("waiting for the supervisor on duty to confirm the lock (state: engaging)"));
+            waiting = true;
+        }
+        QThread::msleep(ulong(qBound(qint64(1), deadline.remainingTime(), qint64(ENGAGEMENT_POLL_MS))));
+    }
+}
 
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    Supervisor supervisor;
+    const QString session = sessionSocketPath();
+    if (session.isEmpty()) {
+        logLine("cannot identify the Wayland session to protect "
+                "(WAYLAND_DISPLAY is relative and XDG_RUNTIME_DIR is unset) — exiting");
+        return 1;
+    }
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnectionInterface *const busService = bus.isConnected() ? bus.interface() : nullptr;
+    if (!busService) {
+        logLine(QStringLiteral("no session bus (%1) — cannot keep one supervisor per session; exiting")
+                    .arg(bus.lastError().message()));
+        return 1;
+    }
+    Supervisor supervisor(session);
+    // Export State() before claiming the name, so the name never exists
+    // without the method that reports what it protects.
+    if (!bus.registerObject(QString::fromLatin1(SUPERVISOR_OBJECT_PATH), &supervisor,
+                            QDBusConnection::ExportScriptableSlots)) {
+        logLine(QStringLiteral("cannot export the supervisor state (%1) — exiting").arg(bus.lastError().message()));
+        return 1;
+    }
+    const QString service = supervisorServiceName(session);
+    const QDBusReply<QDBusConnectionInterface::RegisterServiceReply> claim = busService->registerService(service);
+    if (!claim.isValid()) {
+        logLine(QStringLiteral("cannot claim the supervisor name for %1 (%2) — exiting")
+                    .arg(session, claim.error().message()));
+        return 1;
+    }
+    if (claim.value() != QDBusConnectionInterface::ServiceRegistered) {
+        bus.unregisterObject(QString::fromLatin1(SUPERVISOR_OBJECT_PATH));
+        return confirmSupervisorOnDuty(bus, service, session);
+    }
+    supervisor.start();
     return app.exec();
 }
 

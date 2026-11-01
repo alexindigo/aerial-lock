@@ -75,7 +75,11 @@ ctest --test-dir "$ROOT/build/debug/aerial-tests" --output-on-failure
 
 `make` comes first: `supervisor-session` uses the built supervisor. The portable
 set covers native input and editor migration, the BLOCKED latch, supervisor
-session scoping, pre-engagement/monitor/mixed supervisor outcomes, literal shell
+session scoping and engagement-confirmed duplicates (waiting while engaging, a
+dead locker's lost confirmation, ignored foreign reports, never-engaging and
+failing supervisors, and `dbus-test-tool` name owners that do not answer or
+answer malformed; it also uses `busctl`), pre-engagement/monitor/mixed and
+engaged-then-abnormal supervisor outcomes, literal shell
 operands, incremental build configuration, driver wait ordering, media-failure
 fallback (an injected core failure; `media-fallback-render` needs a platform
 that renders video, e.g. inside a nested compositor: it is reported as skipped
@@ -144,7 +148,10 @@ files than there are outputs, and that the shared `/tmp` is unchanged.
 
 `launch-integration.py --root "$ROOT" --vm-record "$VM_RECORD"` checks the
 staged installed supervisor, same-PID runner, real-PAM unlock and failed starts
-(missing runner/plugin, arming and monitor faults). `--stage` can select a second
+(missing runner/plugin, arming and monitor faults). A duplicate supervisor for
+the same session runs beside each on a private bus: beside the real lock it
+must report waiting while engaging and exit 0 only after the locker's
+confirmation; beside each failed start it must exit 4. `--stage` can select a second
 install prefix inside the workspace. `nested-launch-integration.py` checks the
 development template with `--backend niri --vm-key` (emulated guest keyboard)
 or `--backend hyprland --ipc-control` (compositor spawn path, not native keys).

@@ -202,10 +202,22 @@ failure is `71` (engagement unknown). At exhaustion the supervisor exits `3`
 for guard failures: all-72 attempts mean none of these attempts engaged a lock
 (the current screen state is still **unknown**, since an earlier lock may be
 held), while mixed outcomes or a monitor failure mean it **may be unlocked**. Other abnormal
-failures exit `2`. Manual recovery is `aerial-unlock`
+failures exit `2`; the supervisor reports that the session stays locked only
+when one of its attempts confirmed the lock. Manual recovery is `aerial-unlock`
 from a TTY (see the README's "Recovery (last resort)" section for exit codes
-and the per-compositor story). Behaviour is fixed — the respawn limit and
-timeouts are build constants, not configuration.
+and the per-compositor story).
+
+One supervisor protects each Wayland session. Its state follows the actual
+lock: each locker attempt reports the compositor's ext-session-lock `locked`
+confirmation over a private channel the supervisor accepts only from that
+attempt's process, and a locker that exits loses the confirmation until the
+next attempt reports. A second `aerial-lock` for the same session launches
+nothing; it asks the supervisor on duty for that state and exits `0` only once
+it is confirmed, waiting up to 10 s while the lock is still being engaged.
+Otherwise — not confirmed in time, a failing or vanished supervisor, or a name
+owner without a valid state — it exits `4`: engagement not confirmed, the
+screen may be unlocked. Behaviour is fixed — the respawn limit and timeouts
+are build constants, not configuration.
 
 ## Rate limiting and lockout
 

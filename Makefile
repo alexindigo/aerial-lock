@@ -185,6 +185,7 @@ install: all
 	install -m 644 Services/ThemeSelection.js $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/LockContext.qml $(DESTDIR)$(DATADIR)/Services/
 	install -m 644 Services/AuthInputState.qml $(DESTDIR)$(DATADIR)/Services/
+	install -m 644 Services/EngagementReport.qml $(DESTDIR)$(DATADIR)/Services/
 	install -d $(DESTDIR)$(DATADIR)/Services/Compositor
 	install -m 644 Services/Compositor/NiriBackend.qml $(DESTDIR)$(DATADIR)/Services/Compositor/
 	install -m 644 Services/Compositor/HyprlandBackend.qml $(DESTDIR)$(DATADIR)/Services/Compositor/

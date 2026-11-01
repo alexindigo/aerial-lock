@@ -65,6 +65,14 @@ binds {
 bind = SUPER, L, exec, aerial-lock
 ```
 
+One supervisor protects each Wayland session. Running `aerial-lock` again for
+a session that is already being locked (a keybinding and an idle daemon, say)
+starts no second locker: the new invocation asks the supervisor on duty for its
+actual lock state and exits 0 only once that supervisor's current locker has
+reported the compositor's lock confirmation. It waits up to 10 seconds while
+the lock is still being engaged and otherwise exits 4 (see
+[Recovery](#recovery-last-resort)).
+
 ### Development
 
 Enable the pre-commit hook with `git config core.hooksPath .githooks`; it needs
@@ -204,9 +212,11 @@ supervisor outcome before assuming that the screen is protected:
 
 | Supervisor exit | Meaning |
 |---|---|
-| 0 | Clean completion, duplicate supervisor for the same session, or compositor gone. Not a lock-readiness signal. |
-| 2 | Other abnormal failures exhausted retries; no automatic unlock. Recover manually below. |
+| 0 | Clean completion or compositor gone; for the supervisor on duty this is not a lock-readiness signal. A duplicate invocation for a session that is already protected exits 0 only after the supervisor on duty confirmed that its current locker holds the lock. |
+| 1 | The supervisor could not start: the session to protect, the session bus or its per-session name is unavailable. Nothing was launched. |
+| 2 | Other abnormal failures exhausted retries; no automatic unlock. The log says the session stays locked only if an attempt confirmed the lock; otherwise the current screen state is **unknown**. Recover manually below. |
 | 3 | Guard unavailable or failed. If every attempt exited 72, none of this run's attempts engaged a lock, but the current screen state is **unknown**: a lock from an earlier run may still be held. If a monitor failed (71) or outcomes were mixed, engagement is not confirmed and the screen **may be unlocked**. Check the screen, inspect the installation and recover from a TTY if needed. |
+| 4 | Duplicate invocation, lock not confirmed: another supervisor is on duty for this session, but it did not report a confirmed lock within 10 seconds (still engaging, failing or gone), or the name's owner gave no valid state. The screen **may be unlocked**; this invocation launched nothing. |
 
 **From a TTY (or SSH), as the same user — manual recovery / diagnostics:**
 

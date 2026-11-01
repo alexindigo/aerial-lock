@@ -122,6 +122,14 @@ ShellRoot {
         }
     }
 
+    // The supervisor learns the actual lock state from this report, never
+    // from the mere fact that this process runs.
+    readonly property LockModule.Lock lock: lockLoader.item as LockModule.Lock
+    Services.EngagementReport {
+        path: Quickshell.env("AERIAL_LOCK_ENGAGEMENT_SOCKET") || ""
+        secure: root.lock !== null && root.lock.secure
+    }
+
     Timer {
         id: fallbackQuit
         interval: cfg.data && cfg.data.fallbackQuitMs ? cfg.data.fallbackQuitMs : 3000
