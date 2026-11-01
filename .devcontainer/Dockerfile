@@ -1,7 +1,7 @@
 FROM docker.io/library/archlinux:base-devel
 
 RUN pacman -Syu --noconfirm --needed \
-        qt6-declarative qt6-5compat quickshell mpv git cmake \
+        qt6-declarative qt6-5compat quickshell mpv git cmake shellcheck \
     && useradd --create-home builder \
     && for package in qt6-mpvqml qt6-niriqml; do \
         install -d -o builder -g builder "/var/tmp/$package" \

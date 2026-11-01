@@ -13,7 +13,23 @@ export GIT_CONFIG_KEY_0=safe.directory
 export GIT_CONFIG_VALUE_0="$PWD"
 
 Scripts/dev/qmllint.sh .
-# Repository-wide shellcheck is not clean yet (SC2012 in Scripts/dev/nested.sh).
+# Use NUL-delimited tracked paths, including extensionless launchers and hooks.
+# Keep this in the shared entry point so the hook and CI discover the same set.
+git ls-files -z | {
+    shell_scripts=()
+    while IFS= read -r -d '' file; do
+        [[ -f "$file" ]] || continue
+        first_line=''
+        IFS= read -r first_line < "$file" || true
+        if [[ "$file" == *.sh || "$first_line" =~ ^\#!.*(/|[[:space:]])(ba)?sh([[:space:]]|$) ]]; then
+            shell_scripts+=("./$file")
+        fi
+    done
+    printf 'ShellCheck: %s scripts\n' "${#shell_scripts[@]}"
+    if ((${#shell_scripts[@]})); then
+        shellcheck -- "${shell_scripts[@]}"
+    fi
+}
 if [[ "${1:-}" == --hook ]]; then
     git diff --cached --check
 fi

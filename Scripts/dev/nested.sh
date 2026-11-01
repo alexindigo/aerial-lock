@@ -63,6 +63,12 @@ render() {
     sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@TERMINAL@|$TERMINAL|g" "$1" > "$2"
 }
 
+# Match the non-hidden instance names without parsing display-oriented ls output.
+hyprland_instances() {
+    find "${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR not set}/hypr" \
+        -mindepth 1 -maxdepth 1 ! -name '.*' -printf '%f\n' 2>/dev/null | sort || true
+}
+
 case "$BACKEND" in
 niri)
     CFG="$RUN_DIR/niri.kdl"
@@ -74,13 +80,13 @@ hyprland)
     CFG="$RUN_DIR/hyprland.conf"
     render "$REPO_ROOT/Scripts/dev/nested/hyprland.conf.in" "$CFG"
 
-    BEFORE="$(ls "${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR not set}/hypr" 2>/dev/null | sort || true)"
+    BEFORE="$(hyprland_instances)"
     Hyprland -c "$CFG" &
     HYPID=$!
 
     SIG=""
     for _ in $(seq 1 50); do
-        SIG="$(comm -13 <(printf '%s\n' "$BEFORE") <(ls "$XDG_RUNTIME_DIR/hypr" 2>/dev/null | sort) | head -1 || true)"
+        SIG="$(comm -13 <(printf '%s\n' "$BEFORE") <(hyprland_instances) | head -1 || true)"
         [ -n "$SIG" ] && break
         kill -0 "$HYPID" 2>/dev/null || { echo "nested.sh: Hyprland exited early" >&2; exit 1; }
         sleep 0.2
