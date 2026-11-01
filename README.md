@@ -70,7 +70,8 @@ bind = SUPER, L, exec, aerial-lock
 Enable the pre-commit hook with `git config core.hooksPath .githooks`; it needs
 Podman and a user systemd session, and builds a resource-limited Arch lint image
 automatically when `.devcontainer/` changes. GitHub CI builds the same container
-and runs the same checks offline with the repository mounted read-only.
+and runs the same QML lint offline with the repository mounted read-only;
+the hook additionally checks staged whitespace.
 
 Run from the repo during development:
 

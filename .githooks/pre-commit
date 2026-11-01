@@ -21,7 +21,14 @@ mounts=(-v "$root:$root:ro")
 [[ "$gitdir" == "$root/"* ]] || mounts+=(-v "$gitdir:$gitdir:ro")
 [[ "$common" == "$root/"* || "$common" == "$gitdir" ]] || mounts+=(-v "$common:$common:ro")
 index_env=()
-[[ -z "${GIT_INDEX_FILE:-}" ]] || index_env+=(--env GIT_INDEX_FILE)
+if [[ -n "${GIT_INDEX_FILE:-}" ]]; then
+    GIT_INDEX_FILE=$(git rev-parse --path-format=absolute --git-path index)
+    export GIT_INDEX_FILE
+    if [[ "$GIT_INDEX_FILE" != "$root/"* && "$GIT_INDEX_FILE" != "$gitdir/"* && "$GIT_INDEX_FILE" != "$common/"* ]]; then
+        mounts+=(--mount "type=bind,src=$GIT_INDEX_FILE,dst=$GIT_INDEX_FILE,ro")
+    fi
+    index_env+=(--env GIT_INDEX_FILE)
+fi
 
 timeout 5m podman run --rm --pull=never --network=none \
     --memory=4g --memory-swap=4g --pids-limit=256 --cpus=2 --userns=keep-id \
