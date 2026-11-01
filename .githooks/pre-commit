@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+# Hash paths and contents, including unstaged changes to the build context.
+digest=$(find .devcontainer -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+image="localhost/aerial-lock-lint:${digest%% *}"
+if ! timeout 30s podman image inspect "$image" >/dev/null 2>&1; then
+    # Podman build has no --pids-limit: cap the whole build's cgroup instead.
+    timeout 20m systemd-run --user --scope --quiet \
+        -p MemoryMax=4G -p MemorySwapMax=0 -p TasksMax=256 -p CPUQuota=200% \
+        podman build --pull=always --no-cache --memory=4g --memory-swap=4g \
+        --cpu-period=100000 --cpu-quota=200000 -t "$image" "$root/.devcontainer"
+fi
+
+# Linked worktrees keep their index and common objects outside the checkout.
+gitdir=$(git rev-parse --absolute-git-dir)
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+mounts=(-v "$root:$root:ro")
+[[ "$gitdir" == "$root/"* ]] || mounts+=(-v "$gitdir:$gitdir:ro")
+[[ "$common" == "$root/"* || "$common" == "$gitdir" ]] || mounts+=(-v "$common:$common:ro")
+index_env=()
+[[ -z "${GIT_INDEX_FILE:-}" ]] || index_env+=(--env GIT_INDEX_FILE)
+
+timeout 5m podman run --rm --pull=never --network=none \
+    --memory=4g --memory-swap=4g --pids-limit=256 --cpus=2 --userns=keep-id \
+    "${mounts[@]}" "${index_env[@]}" -w "$root" "$image" bash .devcontainer/check.sh --hook
