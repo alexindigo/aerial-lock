@@ -33,7 +33,7 @@ Scope {
         var raw = flagsFile.text()
         if (raw && raw.length > 0) {
             try {
-                var data = JSON.parse(raw)
+                const data = JSON.parse(raw)
                 if (data && typeof data.debugAllowDismiss === "boolean"
                         && typeof data.verbose === "boolean") {
                     root.debugAllowDismiss = data.debugAllowDismiss

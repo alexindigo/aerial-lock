@@ -29,21 +29,21 @@ Item {
     // d38: playback export for LockContext. The plugin has no
     // currentFilename Q_PROPERTY, but mpv's `playlist` marks the playing
     // entry — derive it from there ("" when nothing plays).
-    readonly property real position: player.position
-    readonly property real duration: player.duration
-    readonly property bool hasVideo: player.hasVideo
+    readonly property real position: videoPlayer.position
+    readonly property real duration: videoPlayer.duration
+    readonly property bool hasVideo: videoPlayer.hasVideo
     // d45: the sensed prominent color of the current frame (transparent
     // when unsensed). The 600 ms crossfade lives at the value's origin
     // (AccentSampler) and animates the whole downstream chain.
     readonly property color accentColor: sampler.accent
     readonly property string currentFilename: {
-        var pl = player.playlist
+        var pl = videoPlayer.playlist
         for (var i = 0; i < pl.length; i++) {
             if (pl[i] && pl[i].current && pl[i].filename)
                 return pl[i].filename
         }
-        // Single-file mode (player.source) never populates `playlist`.
-        return player.source || ""
+        // Single-file mode (videoPlayer.source) never populates `playlist`.
+        return videoPlayer.source || ""
     }
 
     function shutdown() {
@@ -59,11 +59,11 @@ Item {
     // nothing to stop (stop() would only report an unavailable core).
     property bool playbackStopped: false
     function stopPlayback() {
-        if (playbackStopped || !player.coreAvailable)
+        if (playbackStopped || !videoPlayer.coreAvailable)
             return
         playbackStopped = true
-        player.paused = true
-        player.stop(false)
+        videoPlayer.paused = true
+        videoPlayer.stop(false)
     }
 
     // Media failure is final for this background, i.e. for this lock: the
@@ -93,9 +93,9 @@ Item {
             if (!it || !it.path || it.path.length === 0)
                 continue
             if (it.kind === "dir")
-                player.loadDirectory(it.path, filters, first ? "replace" : "append", "name")
+                videoPlayer.loadDirectory(it.path, filters, first ? "replace" : "append", "name")
             else
-                player.load(it.path, first ? "replace" : "append")
+                videoPlayer.load(it.path, first ? "replace" : "append")
             first = false
         }
     }
@@ -104,7 +104,7 @@ Item {
 
     AccentSampler {
         id: sampler
-        player: player
+        player: videoPlayer
         trackKey: root.currentFilename
         shotDirectory: root.frameDirectory
         active: root.samplingActive
@@ -112,7 +112,7 @@ Item {
     }
 
     MpvPlayer {
-        id: player
+        id: videoPlayer
         objectName: "backgroundPlayer"
         anchors.fill: parent
         enabled: false            // keys stay on the password field

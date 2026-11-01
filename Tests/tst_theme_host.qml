@@ -30,6 +30,11 @@ Item {
         SignalSpy {}
     }
 
+    Component {
+        id: sceneryComponent
+        Item {}
+    }
+
     TestCase {
         name: "ThemeHostClaimGrace"
         when: windowShown
@@ -69,7 +74,7 @@ Item {
             wait(0)
         }
 
-        function loadCandidate() {
+        function loadCandidate(filename) {
             // Isolate the real Loader.onLoaded handoff path from config and
             // filesystem probing (covered by the nested-shell camera gate).
             var lifecycle = findChild(host, "themeLifecycle")
@@ -79,7 +84,7 @@ Item {
             candidateLoader = loader
             lifecycle.phase = "candidate"
             host.allowLoading = true
-            loader.setSource(Qt.resolvedUrl("fixtures/HandoffTheme.qml"), { "context": ctx })
+            loader.setSource(Qt.resolvedUrl("fixtures/" + (filename || "HandoffTheme.qml")), { "context": ctx })
             tryVerify(function () { return loader.item !== null }, 1000)
             candidate = loader.item
             tryVerify(function () { return model.handoffState !== "" }, 1000)
@@ -87,6 +92,26 @@ Item {
 
         function expectClaimFailure() {
             ignoreWarning(/ThemeHost: theme .* failed: theme editor did not claim the shared draft - using built-in panel/)
+        }
+
+        function test_optional_backdrop_tracks_surface_attachment() {
+            const first = createTemporaryObject(sceneryComponent, root)
+            const second = createTemporaryObject(sceneryComponent, root)
+            model.setActivity(writer, true, false)
+            host.attachTo(root, first)
+            loadCandidate("HandoffBackdropTheme.qml")
+            compare(candidate.backdrop, first)
+            host.attachTo(root, second)
+            compare(candidate.backdrop, second)
+            host.attachTo(null, null)
+            compare(candidate.backdrop, null)
+            host.attachTo(root, first)
+            compare(candidate.backdrop, first)
+            model.setActivity(writer, false, false)
+            verify(model.releaseWriter(writer))
+            verify(candidate.claim())
+            verify(!host.usingFallback)
+            compare(candidate.backdrop, first)
         }
 
         function test_long_composition_waits_then_promotes() {

@@ -23,8 +23,8 @@ Item {
             property int policy: 0
             property int scope: 0
             property var context: ctx
-            property alias fieldA: fieldA
-            property alias fieldB: fieldB
+            property alias fieldA: primaryField
+            property alias fieldB: secondaryField
             property int submitCount: 0
             property var accepted: []
             property bool rigReady: false
@@ -42,7 +42,7 @@ Item {
             }
 
             LockModule.AuthField {
-                id: fieldA
+                id: primaryField
                 context: ctx
                 width: 200
                 height: 40
@@ -52,7 +52,7 @@ Item {
                 visible: false
             }
             LockModule.AuthField {
-                id: fieldB
+                id: secondaryField
                 context: ctx
                 width: 200
                 height: 40
@@ -64,12 +64,12 @@ Item {
                 // Creation properties are applied before this runs. Assign
                 // the phase tunings, THEN show fieldA: its claim offers the
                 // final values, while the epoch is unlatched.
-                fieldA.initialSpacePolicy = rigRoot.policy
-                fieldA.initialSpaceScope = rigRoot.scope
-                fieldB.initialSpacePolicy = rigRoot.policy
-                fieldB.initialSpaceScope = rigRoot.scope
-                fieldA.visible = true
-                fieldA.focusField()
+                primaryField.initialSpacePolicy = rigRoot.policy
+                primaryField.initialSpaceScope = rigRoot.scope
+                secondaryField.initialSpacePolicy = rigRoot.policy
+                secondaryField.initialSpaceScope = rigRoot.scope
+                primaryField.visible = true
+                primaryField.focusField()
                 rigRoot.rigReady = true
             }
         }

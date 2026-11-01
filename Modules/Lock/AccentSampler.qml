@@ -295,11 +295,11 @@ Item {
             var url = ticket.url
             var retry = false
             try {
-                var ctx = getContext("2d")
+                const ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
                 ctx.drawImage(url, 0, 0, width, height)
-                var pixels = ctx.getImageData(0, 0, width, height).data
-                var seed = AccentTone.seedFromPixels(pixels, width, height)
+                const pixels = ctx.getImageData(0, 0, width, height).data
+                const seed = AccentTone.seedFromPixels(pixels, width, height)
                 if (internal.pending === ticket && root.current(ticket)
                         && generation === internal.generation)
                     internal.accent = seed ? Qt.hsla(seed.h, seed.s, seed.l, 1) : "transparent"

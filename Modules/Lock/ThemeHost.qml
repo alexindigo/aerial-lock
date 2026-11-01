@@ -105,7 +105,7 @@ Item {
             return
         internal.handoffPending = false
         handoffClaimGrace.stop()
-        var item = candidate.item
+        const item = candidate.themeItem
         if (!item) {
             failSelected("theme vanished during handoff")
             return
@@ -152,7 +152,7 @@ Item {
             return []
         }
         var result = []
-        for (var i = 0; i < topics.length; i++) {
+        for (let i = 0; i < topics.length; i++) {
             if (typeof topics[i] === "string")
                 result.push(topics[i])
             else
@@ -234,7 +234,7 @@ Item {
     }
 
     LockContent {
-        id: baseline
+        id: fallbackPanel
         anchors.fill: parent
         context: root.context
         visible: !internal.useTheme
@@ -253,16 +253,17 @@ Item {
         visible: internal.useTheme
         enabled: visible
         focus: internal.useTheme
+        readonly property Item themeItem: item as Item
+        property bool prepared: false
         onLoaded: {
             if (internal.settled || !root.allowLoading || root.fallbackPinned)
                 return
-            if (!(item instanceof Item)) {
+            if (!themeItem) {
                 root.failSelected("root is not a visual Item")
                 return
             }
             try {
-                if (item.hasOwnProperty("backdrop"))
-                    item.backdrop = Qt.binding(function () { return root.backdrop })
+                prepared = true
                 internal.topics = root.readTopics(item)
                 // Preparation succeeded: the loading deadline stops here.
                 // Waiting for the user to finish an in-flight composition
@@ -275,33 +276,50 @@ Item {
             }
         }
         onStatusChanged: {
+            if (status !== Loader.Ready)
+                prepared = false
             if (status === Loader.Error && !internal.settled)
                 root.failSelected("load error")
         }
+    }
+
+    // Themes have a visual Item contract, with an optional Item backdrop
+    // (docs/theming.md). Bind the declared capability without requiring
+    // user themes to inherit a particular bundled component.
+    Binding {
+        target: candidate.themeItem
+        property: "backdrop"
+        value: root.backdrop
+        when: candidate.prepared && candidate.themeItem !== null
+              && candidate.themeItem.hasOwnProperty("backdrop")
     }
 
     function focusInput() {
         if (!root.visible || !root.enabled)
             return
         if (!internal.useTheme) {
-            baseline.focusInput()
+            fallbackPanel.focusInput()
             return
         }
-        // qmllint disable missing-property
-        // Loader.item exposes the optional theme focus method dynamically.
-        var item = candidate.item
+        const item = candidate.themeItem
         if (!item)
             return
+        root.focusTheme(item)
+    }
+
+    // User themes implement a structural contract, not a bundled base type.
+    // Dispatch the optional callback at that boundary; visual attachment and
+    // default focus use the validated Item declared by the loader.
+    function focusTheme(theme: var) {
         try {
-            if (typeof item.focusInput === "function")
-                item.focusInput()
+            if (typeof theme.focusInput === "function")
+                theme.focusInput()
             else
-                item.forceActiveFocus()
+                candidate.themeItem.forceActiveFocus()
         } catch (error) {
             root.logger.w("ThemeHost", "focus hook failed: " + error)
-            item.forceActiveFocus()
+            candidate.themeItem.forceActiveFocus()
         }
-        // qmllint enable missing-property
     }
 
     onAllowLoadingChanged: begin()

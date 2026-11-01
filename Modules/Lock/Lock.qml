@@ -83,7 +83,7 @@ Scope {
         return null
     }
     // The one producer of the shared video/accent presentation.
-    readonly property var selectedBackground: selectedSurface ? selectedSurface.background : null
+    readonly property LockBackground selectedBackground: selectedSurface ? selectedSurface.background : null
     // Private per-locker runtime directory created by the launch wrapper
     // (Scripts/aerial-lock-run). Frame grabs never fall back to /tmp:
     // without it, accent sensing is simply off.
@@ -159,16 +159,11 @@ Scope {
 
     // Video playback export for LockContext — exactly one producer, the
     // selected surface's background (null when there is none).
-    //
-    // qmllint disable missing-property
-    // selectedBackground is the dynamically loaded LockBackground.qml,
-    // which defines these — dynamic by design, qmllint cannot see it.
     Binding { target: lockContext.video; property: "position"; value: root.selectedBackground ? root.selectedBackground.position : 0 }
     Binding { target: lockContext.video; property: "duration"; value: root.selectedBackground ? root.selectedBackground.duration : 0 }
     Binding { target: lockContext.video; property: "hasVideo"; value: root.selectedBackground ? root.selectedBackground.hasVideo : false }
     Binding { target: lockContext.video; property: "path"; value: root.selectedBackground ? root.selectedBackground.currentFilename : "" }
     Binding { target: lockContext.video; property: "accent"; value: root.selectedBackground ? root.selectedBackground.accentColor : "transparent" }
-    // qmllint enable missing-property
 
     Connections {
         target: lockContext.video
@@ -413,7 +408,7 @@ Scope {
             property bool complete: false
             function register() {
                 if (complete)
-                    root.registerSurface(lockSurface, lockSurface.screen, lockSurface.contentItem, bgLoader.item)
+                    root.registerSurface(lockSurface, lockSurface.screen, lockSurface.contentItem, bgLoader.background)
             }
             Component.onCompleted: { complete = true; register() }
             onScreenChanged: register()
@@ -429,24 +424,20 @@ Scope {
                 anchors.fill: parent
                 active: root.hasBackground
                 source: "LockBackground.qml"
+                readonly property LockBackground background: item as LockBackground
 
                 onLoaded: {
                     // LockBackground.applySource() runs on the items change;
                     // the list is final by the time the Loader activates.
-                    item.items = root.bgItems
-                    // qmllint disable missing-property
-                    // Loader.item is typed QObject; the loaded item is
-                    // LockBackground.qml, which defines the loadFailed
-                    // signal — dynamic by design, qmllint cannot see it.
-                    item.loadFailed.connect(function (message) {
+                    background.items = root.bgItems
+                    background.loadFailed.connect(function (message) {
                         root.logger.w("aerial-lock", "video background failed: " + message)
                     })
                     // Only the consumed (selected) background samples accents.
-                    item.frameDirectory = root.frameDirectory
-                    item.samplingActive = Qt.binding(function () {
-                        return bgLoader.item !== null && root.selectedBackground === bgLoader.item
+                    background.frameDirectory = root.frameDirectory
+                    background.samplingActive = Qt.binding(function () {
+                        return bgLoader.background !== null && root.selectedBackground === bgLoader.background
                     })
-                    // qmllint enable missing-property
                     lockSurface.register()
                 }
                 onStatusChanged: {
@@ -461,11 +452,8 @@ Scope {
             Connections {
                 target: root
                 function onLockedChanged() {
-                    // qmllint disable missing-property
-                    // Same Loader.item dynamism — LockBackground.shutdown().
-                    if (!root.locked && bgLoader.item)
-                        bgLoader.item.shutdown()
-                    // qmllint enable missing-property
+                    if (!root.locked && bgLoader.background)
+                        bgLoader.background.shutdown()
                 }
             }
         }

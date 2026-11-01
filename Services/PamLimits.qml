@@ -32,7 +32,7 @@ Scope {
         var raw = limitsFile.text()
         if (raw && raw.length > 0) {
             try {
-                var data = JSON.parse(raw)
+                const data = JSON.parse(raw)
                 if (data && typeof data.maxResponseSize === "number" && data.maxResponseSize > 0) {
                     root.maxResponseSize = data.maxResponseSize
                     root.source = data.source || "pam-limits.json"
