@@ -63,11 +63,16 @@ Item {
 
         function test_image_mask_shape_contract() {
             // The mask's shape input must follow the normalized radius —
-            // independent of whether the image decodes. (The pixel masking
-            // itself is Qt's OpacityMask; the contract we own is the shape.)
+            // use a real fixture so asynchronous image errors cannot escape
+            // into another test. The pixel masking itself is Qt's OpacityMask;
+            // the contract we own is the shape.
+            var path = Qt.resolvedUrl("fixtures/avatar-large.svg").toString().replace(/^file:\/\//, "")
             var a = createTemporaryObject(avatarComponent, root,
                                           { "loginName": "Test User", "cornerRadius": 12,
-                                            "source": "/nonexistent-d44-fixture" })
+                                            "source": path })
+            var image = findByPredicate(a, function (it) { return it.sourceSize !== undefined })
+            verify(image !== null)
+            tryCompare(image, "status", Image.Ready)
             var mask = findMask(a)
             verify(mask !== null, "image mask not found")
             compare(mask.radius, 12, "mask follows the normalized radius")

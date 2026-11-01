@@ -22,9 +22,23 @@ node --test Tests/theme-selection.test.cjs Tests/theme-attribution.test.cjs
 ### QML suites
 
 ```sh
+mkdir -p "$TMPDIR/qml-gate"
+log="$TMPDIR/qml-gate/qmltestrunner.log"
+status=0
 QT_QPA_PLATFORM=offscreen QSG_RHI_BACKEND=opengl LIBGL_ALWAYS_SOFTWARE=1 \
-  /usr/lib/qt6/bin/qmltestrunner -import Tests/imports -input Tests
+  /usr/lib/qt6/bin/qmltestrunner -import Tests/imports -input Tests >"$log" 2>&1 || status=$?
+cat "$log"
+qwarnings=$(awk '/^QWARN[[:space:]]*:/ { count++ } END { print count+0 }' "$log")
+printf 'Whole-log QWARN count: %s\n' "$qwarnings"
+test "$status" -eq 0 && test "$qwarnings" -eq 0
 ```
+
+The gate requires both a successful test exit and **zero QWARNs in the whole
+log**, for every suite. Keep the same log check when selecting a single suite:
+construction and teardown warnings occur outside test functions and can escape
+`failOnWarning()`. Every `Connections` declares its target at construction; bind
+to a nullable context while it is unavailable instead of relying on the implicit
+parent target or assigning `target` later in `init()`.
 
 Use `-input Tests/tst_theme_host.qml` to select just one suite. The test-only
 `imports/Quickshell` modules let standalone QtTest load ThemeHost's types

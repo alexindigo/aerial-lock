@@ -329,7 +329,7 @@ Item {
         property var accepted: []
 
         Connections {
-            id: submitSpy
+            target: coreCase.ctx
             // Mimics Lock.qml's zero-argument acceptance: busy submissions
             // are rejected without touching the draft; accepted submissions
             // consume exactly once. Handlers run in the Connections' own
@@ -348,7 +348,6 @@ Item {
             failOnWarning(/.*/)
             ctx = createTemporaryObject(contextComponent, root)
             model = ctx.auth.input
-            submitSpy.target = ctx
             fields = createTemporaryObject(fieldsComponent, root)
             submitCount = 0
             rejectedCount = 0
@@ -362,7 +361,7 @@ Item {
             fields.destroy()
             wait(0)
             fields = null
-            submitSpy.target = null
+            ctx = null
         }
 
         function acceptedIs(list) {
