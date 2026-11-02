@@ -67,4 +67,28 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRun
     assert after == [p.stat().st_mtime_ns for p in objects], "unchanged configuration rebuilt native objects"
     make(b, "CXXFLAGS=-O1 -frecord-gcc-switches")
     assert all(p.stat().st_mtime_ns > old for p, old in zip(objects, after)), "changed flags reused native objects"
-    print("BUILD_CONFIG_PASS paths_consumed_by_installed_supervisor_and_idle stable_noop flags_rebuilt")
+
+    # Exercise the distributor's code-generation phase too. With LTO, Qt's
+    # position-independence requirement must survive the final executable link,
+    # not just the initial compilation. Arch's flags are the package-build
+    # contract; other distributions still exercise the same LTO boundary.
+    packaging_config = Path("/etc/makepkg.conf")
+    if packaging_config.is_file():
+        result = subprocess.run(["bash", "--noprofile", "--norc", "-c",
+            'source "$1"; printf "%s\\0" "$CFLAGS $LTOFLAGS" '
+            '"$CXXFLAGS $LTOFLAGS" "$LDFLAGS $LTOFLAGS"', "bash", str(packaging_config)],
+            capture_output=True, timeout=10, check=True)
+        packaging_flags = result.stdout.decode().split("\0")[:3]
+    else:
+        packaging_flags = ["-O2 -flto", "-O2 -flto", "-flto"]
+    assert len(packaging_flags) == 3 and all("-flto" in value for value in packaging_flags)
+    flags = [key + "=" + value for key, value in
+             zip(("CFLAGS", "CXXFLAGS", "LDFLAGS"), packaging_flags)]
+    print("PACKAGING_LTO_FLAGS " + json.dumps(flags), flush=True)
+    make(b, "clean")
+    make(b, *flags)
+    result = subprocess.run([str(tree / "idle/aerial-idle"), "--print-config"], env=idle_env,
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == defaults["idle"]
+    print("BUILD_CONFIG_PASS paths_consumed_by_installed_supervisor_and_idle stable_noop flags_rebuilt packaging_lto")

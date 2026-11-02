@@ -88,6 +88,13 @@ backend, and fails anywhere else if video does not start) and output-selection
 policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the `owned-instance`
 regression for a prepared VM (below).
 
+`build-config` also rebuilds every native target with LTO. On Arch it sources
+`CFLAGS`, `CXXFLAGS`, `LDFLAGS` and `LTOFLAGS` from `/etc/makepkg.conf`; elsewhere
+it uses a minimal optimized LTO build. This exercises Qt's protected-data-symbol
+contract at final link, as well as compilation, and checks the rebuilt idle
+executable's effective config. Existing path-change, no-op and compiler-flag
+invalidation checks still run first.
+
 `supervisor-release` uses a private bus and stub direct-child runners to
 observe exactly `release\n`, pending engagement, D-Bus/SIGUSR1 parity,
 idempotence, no respawn after clean or abnormal release, a waiting duplicate's

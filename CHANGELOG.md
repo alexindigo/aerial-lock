@@ -23,6 +23,12 @@ Notable user-facing changes are recorded here, following
   supervisor exit 2 and an unknown screen state. Crash recovery still never
   unlocks automatically.
 
+### Fixed
+
+- Native builds with link-time optimization no longer fail on Qt's protected
+  data symbols. The supervisor and aerial-idle retain position-independent code
+  through final linking, including builds with Arch's default makepkg flags.
+
 ### Security
 
 - A duplicate `aerial-lock` for a session that already has a supervisor no

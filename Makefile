@@ -11,6 +11,10 @@ PAM_MAX_RESP_SIZE ?=
 DEBUG_DISMISS ?= 0
 DEBUG_VERBOSE ?= 0
 
+# Qt's protected data symbols require PIC, including LTO's link-time codegen.
+# Keep every object and final link of the Qt consumers on the same model.
+QT_PIC_FLAGS := -fPIC
+
 WAYLAND_PROTOCOLS ?= /usr/share/wayland-protocols
 SESSION_LOCK_XML := $(WAYLAND_PROTOCOLS)/staging/ext-session-lock/ext-session-lock-v1.xml
 IDLE_NOTIFY_XML := $(WAYLAND_PROTOCOLS)/staging/ext-idle-notify/ext-idle-notify-v1.xml
@@ -41,6 +45,7 @@ CPPFLAGS=$(CPPFLAGS)
 CFLAGS=$(CFLAGS)
 CXXFLAGS=$(CXXFLAGS)
 LDFLAGS=$(LDFLAGS)
+QT_PIC_FLAGS=$(QT_PIC_FLAGS)
 DATADIR=$(DATADIR)
 BINDIR=$(BINDIR)
 LIBEXECDIR=$(LIBEXECDIR)
@@ -111,12 +116,12 @@ supervisor/aerial-lock-supervisor.moc: supervisor/aerial-lock-supervisor.cpp
 
 $(OBJDIR)/aerial-supervisor-proto.o: supervisor/ext-session-lock-v1-protocol.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< \
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(QT_PIC_FLAGS) -c $< \
 		$$(pkg-config --cflags wayland-client) -o $@
 
 $(OBJDIR)/aerial-supervisor-main.o: supervisor/aerial-lock-supervisor.cpp supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h
 	@mkdir -p $(@D)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -fPIC -c $< -Isupervisor \
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(QT_PIC_FLAGS) -c $< -Isupervisor \
 		-DAERIAL_LOCK_DEFAULT_SHELL='"$(DATADIR)"' \
 		-DAERIAL_LOCK_DEFAULT_RUNNER='"$(LIBEXECDIR)/aerial-lock-run"' \
 		-DAERIAL_LOCK_DEFAULT_PLUGIN_ROOT='"$(PLUGINROOT)"' \
@@ -127,16 +132,16 @@ native/connection-guard.moc: native/connection-guard.cpp native/connection-guard
 
 $(OBJDIR)/connection-guard.o: native/connection-guard.cpp native/connection-guard.moc native/connection-guard.json
 	@mkdir -p $(@D)
-	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) -fPIC -pthread -c $< \
+	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) $(QT_PIC_FLAGS) -pthread -c $< \
 		$$(pkg-config --cflags Qt6Core Qt6Gui wayland-client) -o $@
 
 $(GUARD_PLUGIN): $(GUARD_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -shared -pthread -o $@ $(GUARD_OBJS) \
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_PIC_FLAGS) -shared -pthread -o $@ $(GUARD_OBJS) \
 		$$(pkg-config --libs Qt6Core Qt6Gui wayland-client) -ldl
 
 supervisor/aerial-lock-supervisor: $(SUPERVISOR_OBJS)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJDIR)/aerial-supervisor-main.o $(OBJDIR)/aerial-supervisor-proto.o \
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_PIC_FLAGS) -o $@ $(OBJDIR)/aerial-supervisor-main.o $(OBJDIR)/aerial-supervisor-proto.o \
 		$$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
 
 idle/ext-idle-notify-v1-client.h: $(IDLE_NOTIFY_XML)
@@ -149,15 +154,15 @@ idle/aerial-idle.moc: idle/aerial-idle.cpp
 	/usr/lib/qt6/moc $< -o $@
 
 $(OBJDIR)/aerial-idle-proto.o: idle/ext-idle-notify-v1-protocol.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< $$(pkg-config --cflags wayland-client) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(QT_PIC_FLAGS) -c $< $$(pkg-config --cflags wayland-client) -o $@
 
 $(OBJDIR)/aerial-idle-main.o: idle/aerial-idle.cpp idle/aerial-idle.moc idle/ext-idle-notify-v1-client.h native/session-identity.h
-	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) -fPIC -c $< -Iidle \
+	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) $(QT_PIC_FLAGS) -c $< -Iidle \
 		-DAERIAL_IDLE_DATADIR='"$(DATADIR)"' -DAERIAL_IDLE_LOCK_COMMAND='"$(BINDIR)/aerial-lock"' \
 		$$(pkg-config --cflags Qt6Core Qt6DBus wayland-client) -o $@
 
 idle/aerial-idle: $(IDLE_OBJS)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(IDLE_OBJS) $$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_PIC_FLAGS) -o $@ $(IDLE_OBJS) $$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
 
 install: all
 	install -d $(DESTDIR)$(DATADIR)
