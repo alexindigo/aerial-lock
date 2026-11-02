@@ -28,7 +28,6 @@
  * says "locked"; anything else it reports as not confirmed (exit 4).
  */
 #include <QCoreApplication>
-#include <QCryptographicHash>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusError>
@@ -60,6 +59,8 @@
 
 #include <wayland-client.h>
 
+#include "../native/session-identity.h"
+
 #ifndef AERIAL_LOCK_DEFAULT_SHELL
 #define AERIAL_LOCK_DEFAULT_SHELL "/usr/share/aerial-lock"
 #endif
@@ -72,7 +73,6 @@
 
 static const int RESPAWN_LIMIT = 3;
 static const int RESPAWN_BACKOFF_MS = 1500;
-static const char *SUPERVISOR_DBUS_NAME = "org.aeriallock.Supervisor";
 static const char *SUPERVISOR_OBJECT_PATH = "/org/aeriallock/Supervisor";
 static const char *SUPERVISOR_INTERFACE = "org.aeriallock.Supervisor";
 // A duplicate invocation waits at most this long for the supervisor on duty to
@@ -90,37 +90,6 @@ static void logLine(const QString &msg)
     QTextStream out(stderr);
     out << "aerial-lock-supervisor: " << msg << "\n";
     out.flush();
-}
-
-// The protected resource is one compositor session, identified by the
-// Wayland socket a client started from this environment connects to
-// (libwayland's resolution: WAYLAND_DISPLAY, default "wayland-0", relative
-// to XDG_RUNTIME_DIR unless absolute). Several sessions can share one user
-// bus (nested or parallel compositors), so the single-instance name is
-// derived from that socket rather than being bus-wide.
-static QString sessionSocketPath()
-{
-    QByteArray display = qgetenv("WAYLAND_DISPLAY");
-    if (display.isEmpty())
-        display = "wayland-0";
-    QString path = QString::fromLocal8Bit(display);
-    if (!path.startsWith(QLatin1Char('/'))) {
-        const QByteArray runtime = qgetenv("XDG_RUNTIME_DIR");
-        if (runtime.isEmpty())
-            return QString();
-        path = QString::fromLocal8Bit(runtime) + QLatin1Char('/') + path;
-    }
-    const QString canonical = QFileInfo(path).canonicalFilePath();
-    return canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
-}
-
-static QString supervisorServiceName(const QString &socket)
-{
-    // Bus name elements allow [A-Za-z0-9_-] and must not start with a digit.
-    const QByteArray digest = QCryptographicHash::hash(socket.toUtf8(),
-                                                      QCryptographicHash::Sha256).toHex().left(32);
-    return QStringLiteral("%1.s%2").arg(QString::fromLatin1(SUPERVISOR_DBUS_NAME),
-                                       QString::fromLatin1(digest));
 }
 
 class Supervisor : public QObject
