@@ -5,6 +5,24 @@ Notable user-facing changes are recorded here, following
 
 ## [Unreleased]
 
+### Added
+
+- `aerial-idle`, a native companion for Wayland inactivity, logind suspend and
+  session lock/unlock events. Its opt-in user service defaults to locking on
+  suspend and forwarding session events, with inactivity locking off until
+  configured. A five-minute example config is installed but never read
+  automatically. Locks run in independent transient units or detached processes,
+  so restarting the daemon cannot terminate them.
+
+### Changed
+
+- Explicit same-user external unlock is supported through the supervisor's
+  D-Bus `Release()` method and SIGUSR1. aerial-idle forwards
+  `loginctl unlock-session`; these requests release gracefully without PAM and
+  disable respawn for the episode. An abnormal locker exit after release gives
+  supervisor exit 2 and an unknown screen state. Crash recovery still never
+  unlocks automatically.
+
 ### Security
 
 - A duplicate `aerial-lock` for a session that already has a supervisor no

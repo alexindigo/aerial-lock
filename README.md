@@ -18,15 +18,32 @@ Not yet packaged for any distribution — install from this repo:
 sudo make install
 ```
 
-Runtime requirements: [Quickshell](https://github.com/outfoxxed/quickshell)
-(any build — not tied to a specific fork),
+Runtime requirements: [Quickshell 0.3.x](https://github.com/outfoxxed/quickshell)
+(not tied to a specific fork),
 [qt6-mpvqml ≥ 0.2.0](https://github.com/alexindigo/mpvqml), which plays the video
 background, and Qt6's `Qt5Compat.GraphicalEffects` module (`qt6-5compat` on
-Arch) for the frosted-clock effect and avatar masking. With an empty
+Arch) for the frosted-clock effect and avatar masking, Qt6 Core/Gui/DBus
+(`qt6-base`), PAM and `wayland`. The guarded runner also requires Bash;
+the optional signal-unlock examples below use `pkill` (`procps-ng` on Arch).
+With an empty
 `sources` list the player is never started and the screen stays
 `backgroundColor`; with sources it shows `backgroundColor` until the first
 frame decodes. The `aerial-lock-fetch` pack downloader (optional) needs
 `curl`, `python3`, and `tar`.
+
+Building requires a C/C++ compiler, Make, pkg-config, Qt6 Core/Gui/DBus
+development files, PAM headers, wayland-client and wayland-protocols (including
+`wayland-scanner`). On Arch these are provided by `base-devel`, `qt6-base`,
+`pam`, `wayland` and `wayland-protocols`; Git is needed to build from a clone.
+
+With the default `PREFIX=/usr`, installation includes `aerial-lock`,
+`aerial-lock-supervisor`, `aerial-unlock`, `aerial-lock-fetch` and `aerial-idle`
+in `/usr/bin`, the shared guarded runner under `/usr/libexec/aerial-lock`, its
+private plugin under `/usr/lib/aerial-lock/qt-plugins`, the QML/config/theme
+bundle under `/usr/share/aerial-lock`, and `/etc/pam.d/aerial-lock`. It also
+installs `/usr/lib/systemd/user/aerial-idle.service` and
+`/usr/share/aerial-lock/examples/idle.json`. The service is **not enabled
+automatically**. `PREFIX` and `DESTDIR` select the install layout.
 
 ### Build-time PAM_MAX_RESP_SIZE override
 
@@ -46,10 +63,6 @@ confirmed transport loss exits abnormally (70); guard monitor failure exits 71
 (engagement unknown), while guard startup failure exits 72 before engagement.
 None of these paths unlocks. Normal PAM unlock still flushes the unlock request
 and exits 0; the supervisor retains its bounded respawn/no-automatic-unlock policy.
-
-Building the native guard/supervisor requires Qt6 Core/Gui/DBus development files,
-wayland-client and wayland-protocols. `make install` installs both the shared
-runner and private plugin; `PREFIX` and `DESTDIR` select their layout.
 
 Bind a key in your compositor config:
 
@@ -72,6 +85,112 @@ actual lock state and exits 0 only once that supervisor's current locker has
 reported the compositor's lock confirmation. It waits up to 10 seconds while
 the lock is still being engaged and otherwise exits 4 (see
 [Recovery](#recovery-last-resort)).
+
+### Idle, suspend and session integration
+
+`aerial-idle` is the companion idle/session daemon. It locks on configured
+inactivity, before logind-managed suspend/hibernate (including lid-close sleep),
+and on `loginctl lock-session`; it forwards `loginctl unlock-session` to the
+supervisor. Enable it from your graphical session:
+
+```sh
+systemctl --user enable --now aerial-idle.service
+```
+
+The user manager must have the session's `WAYLAND_DISPLAY` and
+`XDG_RUNTIME_DIR` environment (and compositor IPC variables for focused-output
+selection). The unit belongs to `graphical-session.target` and requires
+`WAYLAND_DISPLAY`. With no user config, suspend and logind lock/unlock handling
+are **on**, but there is **no idle timeout**:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `idle.timeoutSeconds` | `0` | Nonnegative integer seconds; `0` disables inactivity locking. |
+| `idle.respectInhibitors` | `true` | Wayland idle inhibitors postpone the inactivity timeout. |
+| `idle.lockOnSuspend` | `true` | Hold a sleep-delay inhibitor until lock confirmation, bounded by logind's delay limit minus 500 ms. |
+| `idle.logindLockUnlock` | `true` | Forward logind `Lock` and `Unlock` events for the graphical session. |
+
+For a five-minute timeout, copy the installed example **if you have no config
+yet**:
+
+```sh
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/aerial-lock"
+cp -n /usr/share/aerial-lock/examples/idle.json "${XDG_CONFIG_HOME:-$HOME/.config}/aerial-lock/config.json"
+```
+
+If a config already exists, merge the example's `idle` object into it instead
+of replacing the file. The example is never read automatically. The daemon
+reads the same layered config once at startup, without rewriting it; apply
+edits with `systemctl --user restart aerial-idle.service`. Inspect the effective
+idle settings with `aerial-idle --print-config`. See the
+[configuration reference](docs/config.reference.md#idle-object) for validation
+and protocol fallback behavior.
+
+Each lock runs independently: in its own transient user unit when the systemd
+user manager is reachable, otherwise as a detached process. Restarting or
+stopping aerial-idle leaves a running lock intact. Locks started by keybinds or
+other callers are discovered through the same session-scoped supervisor;
+aerial-idle does not need to have started them.
+
+### Alternatives without aerial-idle
+
+Use one idle/session policy owner. With swayidle or hypridle handling these
+events, leave aerial-idle disabled. A shell can set its `lockCommand` to
+`aerial-lock`; turn off the shell's own lock-on-suspend when aerial-idle owns
+that policy, to avoid competing lockers.
+
+For **swayidle** built with logind support:
+
+```sh
+swayidle -w \
+    timeout 300 'aerial-lock' \
+    before-sleep 'aerial-lock' \
+    lock 'aerial-lock' \
+    unlock "pkill -USR1 -f '^aerial-lock-supervisor'"
+```
+
+`aerial-lock` stays in the foreground for the lock's lifetime, so swayidle's
+`-w` before-sleep command waits until unlock or logind's maximum delay expires;
+it is not a lock-readiness-only wait. aerial-idle instead releases its delay
+as soon as the supervisor confirms the lock.
+
+For **hypridle**:
+
+```conf
+general {
+    lock_cmd = aerial-lock
+    unlock_cmd = pkill -USR1 -f '^aerial-lock-supervisor'
+    before_sleep_cmd = loginctl lock-session
+}
+
+listener {
+    timeout = 300
+    on-timeout = loginctl lock-session
+}
+```
+
+Both examples wire logind's unlock event explicitly. `pkill -f` matches the
+command line: `pkill -x aerial-lock-supervisor` cannot match the kernel's
+15-character process-name limit. The expression above targets supervisors
+for all this user's Wayland sessions; the session-scoped D-Bus `Release()`
+method can target one session (see [Recovery](#recovery-last-resort)).
+
+### Systemd-less sessions
+
+Start `aerial-idle` from compositor autostart or your user service manager
+with the Wayland/session-bus environment. For example, Niri accepts:
+
+```kdl
+spawn-at-startup "aerial-idle"
+```
+
+Without a systemd user manager, locks use the detached launch path. elogind
+exposes the same login1 API for suspend and lock/unlock events, but **a real
+elogind setup is unverified**. With no logind/elogind, aerial-idle warns and
+only inactivity locking is available; use your distribution's sleep hooks to
+run `aerial-lock` in the graphical user's session before sleep. Those hooks
+must supply that session's environment and coordinate sleep with confirmed
+locking; a root hook with no Wayland/session-bus environment is insufficient.
 
 ### Development
 
@@ -276,9 +395,11 @@ aerial-unlock --purge    # kill stale aerial-lock processes, then recover
   a compositor gap, not a Quickshell or aerial-lock one; every third-party
   session-lock client is affected the same way. Not applicable.
 
-`loginctl unlock-session` does **not** work anywhere — lock state lives in
-the compositor, not logind. "Correct password always fails" is a different
-symptom (`pam_faillock`); fix with `sudo faillock --reset`.
+`loginctl unlock-session` works through aerial-idle (with
+`idle.logindLockUnlock=true`) or an alternative daemon's explicitly wired
+unlock event. Without such a listener, use `Release()` or SIGUSR1 directly;
+logind does not itself release the compositor lock. "Correct password always
+fails" is a different symptom (`pam_faillock`); fix with `sudo faillock --reset`.
 
 If the locker cannot start, fix the installation from a TTY. When a previous
 attempt already engaged the lock, manual recovery may also be needed; the
@@ -306,11 +427,11 @@ supervisor never performs takeover-and-unlock automatically.
 
 ## Roadmap
 
-Planned, in rough order: POI overlays / location metadata for the video
-background (local sources and Apple/community packs, including fetch and
-cache, are implemented), compositor integrations (idle/suspend/session
-events), then distribution (AUR packaging, systemd unit). These planned
-features are not required by the shipped locker.
+Idle/suspend/session events and the opt-in aerial-idle user unit are
+implemented. Distribution packaging is being prepared; no AUR package has
+been published yet. Future work includes POI overlays / location metadata
+for video backgrounds. Local sources and Apple/community packs, including
+fetch and cache, are already implemented.
 
 ## License
 

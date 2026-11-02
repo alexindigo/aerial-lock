@@ -227,6 +227,13 @@ when one of its attempts confirmed the lock. Manual recovery is `aerial-unlock`
 from a TTY (see the README's "Recovery (last resort)" section for exit codes
 and the per-compositor story).
 
+An explicit supervisor D-Bus `Release()` or SIGUSR1 request releases gracefully
+without PAM and disables further respawns for that episode. aerial-idle forwards
+logind `Unlock` when `idle.logindLockUnlock` is true. After a release request,
+clean locker exit gives supervisor exit `0`; abnormal exit gives `2` without
+respawn and the screen state is unknown. This is an explicit external-unlock
+path, not automatic crash recovery.
+
 One supervisor protects each Wayland session. Its state follows the actual
 lock: each locker attempt reports the compositor's ext-session-lock `locked`
 confirmation over a private channel the supervisor accepts only from that

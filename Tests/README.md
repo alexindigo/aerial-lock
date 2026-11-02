@@ -98,6 +98,19 @@ completion, without entering `app.exec()`, to check the actual
 there is no product test switch. Offscreen `tst_engagement_report.qml` checks
 the exact command and one-warning policy at the inactive transport boundary.
 
+`idle-config` compares the native reader's `--print-config` output with the
+actual ConfigStore merge/schema methods in QML for shared fixtures: missing,
+partial, full and invalid objects/fields, extra keys and timeout bounds.
+`idle-logind` uses private system/session buses, fake login1/systemd peers and
+the real supervisor with a stub runner. It checks lock deduplication, unlock
+forwarding, real inhibitor-FD lifetime through confirmation/deadline/resume,
+login1 replacement (including replacement without an old resume and failed
+state snapshots), bypass-started locks, typed transient-unit arguments and
+detached process ancestry. Daemon termination must leave the independent
+lock alive. Each policy switch and compositor-disconnect exit are covered.
+Private runtime sockets use a shared short namespace under `TMPDIR`, with
+encoded-path length preflight before launching a fixture.
+
 ## Real-session integration drivers
 
 `run-remediation.sh` (→ `remediation-driver.py`), `launch-integration.py` and
@@ -174,6 +187,14 @@ synthetic in-flight PAM endpoint: release must abort PAM before synchronous
 completion, clear pending state, emit `unlocked()` once and destroy the Loader
 tree through the normal path. This is the Lock.release() QML regression;
 offscreen shims do not substitute for the real session-lock lifecycle.
+
+The same staged driver exercises five-second inactivity locking and a real
+visible-surface idle inhibitor: no lock for 15 seconds while inhibited, then
+lock within 10 seconds after the probe exits. Each leg uses an independent
+owned compositor cycle, observes real lock confirmation, authenticates through
+PAM, observes clean exit and checks desktop input afterwards. These nested
+checks do not replace real-session service restart, logind or suspend checks
+in the disposable guest's own graphical session.
 
 Prepare authentication fixtures only in the disposable guest. Save original
 credentials root-only before changing them, pass fixture secrets through stdin,
