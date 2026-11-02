@@ -4,9 +4,9 @@
  * Long-lived child process (the aerial-lock launcher): spawns the locker,
  * retries within three total attempts on abnormal death, and — when attempts run
  * out — reports failure without claiming an unavailable guard locked the
- * session. There is NO automatic unlock
- * anywhere: no path from "at the lock screen" to "inside the session" that
- * does not go through PAM. The shelved auto-release work (Takeover::run as a
+ * session. Recovery never unlocks automatically. An explicit Release() call
+ * on the user's session bus or SIGUSR1 requests a graceful locker release,
+ * bypassing PAM and disabling further respawns. The shelved auto-release work (Takeover::run as a
  * supervisor call path, the escalation gate, probe-based state detection)
  * lives on the `shelved/auto-release` branch; the manual `aerial-unlock`
  * binary is unchanged as the ops/TTY tool.
@@ -30,6 +30,7 @@
 #include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
+#include <QDBusContext>
 #include <QDBusError>
 #include <QDBusMessage>
 #include <QDBusReply>
@@ -52,6 +53,8 @@
 #include <utility>
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -84,6 +87,20 @@ static const int DUPLICATE_UNCONFIRMED_EXIT = 4;
 // Passed to each locker attempt: where to report its lock confirmation.
 static const char *ENGAGEMENT_SOCKET_ENV = "AERIAL_LOCK_ENGAGEMENT_SOCKET";
 static const QByteArray ENGAGEMENT_LOCKED_REPORT = QByteArrayLiteral("locked\n");
+static const QByteArray RELEASE_REQUEST = QByteArrayLiteral("release\n");
+
+// The signal handler only writes to a nonblocking pipe. Qt and the release
+// state machine run on the event-loop thread, never in signal context.
+static volatile sig_atomic_t releaseSignalFd = -1;
+static void releaseSignalHandler(int)
+{
+    const int saved = errno;
+    const char byte = 1;
+    ssize_t result;
+    do { result = ::write(int(releaseSignalFd), &byte, 1); } while (result < 0 && errno == EINTR);
+    // EAGAIN means the pipe already contains a release request.
+    errno = saved;
+}
 
 static void logLine(const QString &msg)
 {
@@ -92,7 +109,7 @@ static void logLine(const QString &msg)
     out.flush();
 }
 
-class Supervisor : public QObject
+class Supervisor : public QObject, protected QDBusContext
 {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.aeriallock.Supervisor")
@@ -112,6 +129,16 @@ public:
 
     ~Supervisor() override
     {
+        if (m_signalPipe[0] >= 0) {
+            sigset_t mask;
+            sigemptyset(&mask);
+            sigaddset(&mask, SIGUSR1);
+            ::sigprocmask(SIG_BLOCK, &mask, nullptr);
+            releaseSignalFd = -1;
+            delete m_signalNotifier;
+            ::close(m_signalPipe[0]);
+            ::close(m_signalPipe[1]);
+        }
         closeReport();
         closeChannel();
     }
@@ -126,6 +153,31 @@ public:
         m_lockerCommand = lockerCommandLine();
         m_attempt = 0;
         launch();
+    }
+
+    // Only the atomic name-claim winner installs a handler. SIGUSR1 was
+    // blocked before Qt created any threads; duplicates keep it blocked.
+    bool installReleaseSignal()
+    {
+        if (::pipe2(m_signalPipe, O_CLOEXEC | O_NONBLOCK) != 0) return false;
+        m_signalNotifier = new QSocketNotifier(m_signalPipe[0], QSocketNotifier::Read, this);
+        connect(m_signalNotifier, &QSocketNotifier::activated, this, [this] {
+            char bytes[128];
+            ssize_t count;
+            do { count = ::read(m_signalPipe[0], bytes, sizeof(bytes)); }
+            while (count > 0 || (count < 0 && errno == EINTR));
+            requestRelease(QStringLiteral("SIGUSR1"));
+        });
+        releaseSignalFd = m_signalPipe[1];
+        struct sigaction action {};
+        action.sa_handler = releaseSignalHandler;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags = SA_RESTART;
+        if (::sigaction(SIGUSR1, &action, nullptr) != 0) return false;
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGUSR1);
+        return ::sigprocmask(SIG_UNBLOCK, &mask, nullptr) == 0;
     }
 
     static QString stateName(LockState state)
@@ -143,7 +195,56 @@ public slots:
     // org.aeriallock.Supervisor.State — this episode's actual lock state.
     Q_SCRIPTABLE QString State() const { return stateName(m_state); }
 
+    Q_SCRIPTABLE void Release()
+    {
+        if (!requestRelease(QStringLiteral("D-Bus")) && calledFromDBus())
+            sendErrorReply(QStringLiteral("org.aeriallock.Supervisor.Error.NotLocked"),
+                           QStringLiteral("This episode is not locked"));
+    }
+
 private:
+    bool requestRelease(const QString &via)
+    {
+        if (m_state == LockState::Ended || m_state == LockState::Failed) return false;
+        m_releaseRequested = true;
+        log(QStringLiteral("release requested via %1 — %2")
+                .arg(via, m_state == LockState::Locked ? QStringLiteral("delivering")
+                                                       : QStringLiteral("pending lock confirmation")));
+        deliverRelease();
+        // A release during respawn backoff has no current locker to release.
+        // End with unknown screen state rather than starting another attempt.
+        if (!m_child) {
+            log("release requested during respawn backoff — screen state unknown; no respawn");
+            finishEpisode(2);
+        }
+        return true;
+    }
+
+    void deliverRelease()
+    {
+        if (!m_releaseRequested || m_releaseDelivered || m_state != LockState::Locked || m_reportFd < 0) return;
+        while (m_releaseOffset < RELEASE_REQUEST.size()) {
+            const ssize_t sent = ::send(m_reportFd, RELEASE_REQUEST.constData() + m_releaseOffset,
+                                        size_t(RELEASE_REQUEST.size() - m_releaseOffset), MSG_NOSIGNAL);
+            if (sent < 0 && errno == EINTR) continue;
+            if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                if (!m_releaseNotifier) {
+                    m_releaseNotifier = new QSocketNotifier(m_reportFd, QSocketNotifier::Write, this);
+                    connect(m_releaseNotifier, &QSocketNotifier::activated, this, [this] { deliverRelease(); });
+                }
+                return;
+            }
+            if (sent <= 0) {
+                withdrawReport(QStringLiteral("release delivery failed — screen state unknown"));
+                return;
+            }
+            m_releaseOffset += sent;
+        }
+        if (m_releaseNotifier) m_releaseNotifier->setEnabled(false);
+        m_releaseDelivered = true;
+        log("release delivered to the locker");
+    }
+
     QString lockerCommandLine()
     {
         // the supervisor IS the aerial-lock launcher: it runs the locker
@@ -156,6 +257,7 @@ private:
 
     void launch()
     {
+        if (m_releaseRequested) return; // a pending backoff never revives a released episode
         m_attempt++;
         m_attemptSettled = false;
         // A new attempt has confirmed nothing yet, whatever an earlier one did.
@@ -253,6 +355,17 @@ private:
         if (!waylandAlive(m_sessionSocket)) {
             log("compositor connection dead — session over, clearing state");
             finishEpisode(0);
+            return;
+        }
+
+        if (m_releaseRequested) {
+            if (exitCode == 0 && status == QProcess::NormalExit) {
+                log("released locker exited cleanly — done");
+                finishEpisode(0);
+            } else {
+                log("released, but the locker exited abnormally — screen state unknown; no respawn");
+                finishEpisode(2);
+            }
             return;
         }
 
@@ -486,6 +599,8 @@ private:
                 m_episodeEngaged = true;
                 log(QStringLiteral("attempt %1: the locker confirmed the session lock").arg(m_attempt));
                 setState(LockState::Locked);
+                deliverRelease();
+                if (m_reportFd < 0) return;
             }
         }
     }
@@ -500,6 +615,11 @@ private:
 
     void closeReport()
     {
+        if (m_releaseNotifier) {
+            m_releaseNotifier->setEnabled(false);
+            m_releaseNotifier->deleteLater();
+            m_releaseNotifier = nullptr;
+        }
         if (m_reportFd < 0) return;
         // Never delete a notifier from inside its own activation.
         m_reportNotifier->setEnabled(false);
@@ -563,6 +683,12 @@ private:
     int m_reportFd = -1;
     QSocketNotifier *m_reportNotifier = nullptr;
     QByteArray m_reportBuffer;
+    bool m_releaseRequested = false;
+    bool m_releaseDelivered = false;
+    qsizetype m_releaseOffset = 0;
+    QSocketNotifier *m_releaseNotifier = nullptr;
+    int m_signalPipe[2] = {-1, -1};
+    QSocketNotifier *m_signalNotifier = nullptr;
 };
 
 // Only printable state names are echoed; anything else is reported as malformed.
@@ -631,6 +757,13 @@ static int confirmSupervisorOnDuty(const QDBusConnection &bus, const QString &se
 
 int main(int argc, char **argv)
 {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    if (::sigprocmask(SIG_BLOCK, &mask, nullptr) != 0) {
+        std::perror("aerial-lock-supervisor: cannot block SIGUSR1");
+        return 1;
+    }
     QCoreApplication app(argc, argv);
     const QString session = sessionSocketPath();
     if (session.isEmpty()) {
@@ -663,6 +796,10 @@ int main(int argc, char **argv)
     if (claim.value() != QDBusConnectionInterface::ServiceRegistered) {
         bus.unregisterObject(QString::fromLatin1(SUPERVISOR_OBJECT_PATH));
         return confirmSupervisorOnDuty(bus, service, session);
+    }
+    if (!supervisor.installReleaseSignal()) {
+        logLine("cannot install the release signal handler — exiting without launching a locker");
+        return 1;
     }
     supervisor.start();
     return app.exec();

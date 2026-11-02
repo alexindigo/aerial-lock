@@ -200,13 +200,26 @@ see the per-compositor notes under [Recovery](#recovery-last-resort).
 The supervisor (`aerial-lock-supervisor`, what `aerial-lock` actually execs)
 owns the locker lifecycle: it spawns the QML locker and respawns it up to
 three total attempts on abnormal death. When attempts run out it reports the
-failure — there is **no automatic unlock anywhere**. No path from
-the lock screen into the session exists that does not go through PAM.
+failure — crash recovery never unlocks automatically. Normal interactive
+unlock goes through PAM. An explicit D-Bus `Release()` call on
+`org.aeriallock.Supervisor` at `/org/aeriallock/Supervisor` (on its
+session-scoped `org.aeriallock.Supervisor.s<hash>` bus name), or SIGUSR1 to
+the supervisor on duty, releases its locker gracefully without PAM:
+
+```sh
+pkill -USR1 -f '^aerial-lock-supervisor'
+```
+
+Any caller on the user's session bus may call `Release()`, and any process
+running as the user can request this external unlock, as with
+swaylock/hyprlock. A release requested while the locker is still engaging is
+delivered once it confirms the lock. Release disables further respawns;
+the locker takes its normal unlock/teardown path and exits 0.
 
 **Automatic.** If the locker crashes while the session is locked, the
 supervisor retries within the three-attempt limit. Locker exit `0` means clean unlock / PAM
 refusal / external invalidation, so it does not respawn; anything else is an
-abnormal death and gets a respawn. Compositor death is detected first so the
+abnormal death and gets a respawn unless release was requested. Compositor death is detected first so the
 supervisor never spawns into a dead session. If all attempts fail, inspect the
 supervisor outcome before assuming that the screen is protected:
 
@@ -214,7 +227,7 @@ supervisor outcome before assuming that the screen is protected:
 |---|---|
 | 0 | Clean completion or compositor gone; for the supervisor on duty this is not a lock-readiness signal. A duplicate invocation for a session that is already protected exits 0 only after the supervisor on duty confirmed that its current locker holds the lock. |
 | 1 | The supervisor could not start: the session to protect, the session bus or its per-session name is unavailable. Nothing was launched. |
-| 2 | Other abnormal failures exhausted retries; no automatic unlock. The log says the session stays locked only if an attempt confirmed the lock; otherwise the current screen state is **unknown**. Recover manually below. |
+| 2 | Other abnormal failures exhausted retries, or the locker exited abnormally after an explicit release request (without respawn); no automatic recovery unlock. After release the screen state is **unknown**. Otherwise the log says the session stays locked only if an attempt confirmed the lock; without confirmation the current screen state is **unknown**. Recover manually below. |
 | 3 | Guard unavailable or failed. If every attempt exited 72, none of this run's attempts engaged a lock, but the current screen state is **unknown**: a lock from an earlier run may still be held. If a monitor failed (71) or outcomes were mixed, engagement is not confirmed and the screen **may be unlocked**. Check the screen, inspect the installation and recover from a TTY if needed. |
 | 4 | Duplicate invocation, lock not confirmed: another supervisor is on duty for this session, but it did not report a confirmed lock within 10 seconds (still engaging, failing or gone), or the name's owner gave no valid state. The screen **may be unlocked**; this invocation launched nothing. |
 

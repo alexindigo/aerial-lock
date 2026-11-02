@@ -187,6 +187,18 @@ Scope {
         }
     }
 
+    // Explicit external release uses the same WlSessionLock/teardown path as
+    // PAM success. Cancel first: abort may synchronously complete the attempt.
+    function release() {
+        if (!root.locked)
+            return
+        root.attemptCancelled = true
+        root.acceptedResponse = null
+        root.unlockInProgress = false
+        root.pamEndpoint.abort()
+        root.locked = false
+    }
+
     function updateVideoInfo(path) {
         var info = sourceCache.lookup(path)
         lockContext.video.id = (info && info.id) ? info.id : ""

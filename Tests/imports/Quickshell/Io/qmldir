@@ -1,3 +1,5 @@
 module Quickshell.Io
 FileView 1.0 FileView.qml
 singleton FileViewError 1.0 FileViewError.qml
+Socket 1.0 Socket.qml
+SplitParser 1.0 SplitParser.qml

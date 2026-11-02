@@ -15,11 +15,27 @@ Scope {
 
     required property string path
     required property bool secure
+    signal releaseRequested()
+    property bool warnedUnknownCommand: false
+
+    function readCommand(line) {
+        if (line === "release") {
+            root.releaseRequested()
+        } else if (!root.warnedUnknownCommand) {
+            root.warnedUnknownCommand = true
+            console.warn("EngagementReport: ignored an unknown supervisor command")
+        }
+    }
 
     Socket {
         id: channel
+        objectName: "engagementReportChannel"
         path: root.path
         connected: root.secure && root.path.length > 0
+        parser: SplitParser {
+            objectName: "engagementReportParser"
+            onRead: line => root.readCommand(line)
+        }
         onConnectedChanged: {
             if (channel.connected) {
                 channel.write("locked\n")

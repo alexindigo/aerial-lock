@@ -9,11 +9,13 @@ supervisor whose attempts never engage.
 from collections import deque
 import argparse
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
 import select
 import shlex
+import shutil
 import signal
 import subprocess
 import threading
@@ -86,12 +88,19 @@ def main():
             raise RuntimeError("private bus did not start")
         env["DBUS_SESSION_BUS_ADDRESS"] = bus.stdout.readline().strip()
         session.assert_control()
-        log = driver.ObservedProcess.__new__(driver.ObservedProcess)
-        log.lines = deque(maxlen=4096)
-        log.log = session.output / "locker.redacted.log"
+        def locker_log(path):
+            observed = driver.ObservedProcess.__new__(driver.ObservedProcess)
+            observed.lines = deque(maxlen=4096)
+            observed.log = path
+            # Publish the process interface before starting its FIFO reader;
+            # wait_for may run before the writer opens the pipe.
+            observed.process = SimpleNamespace(stdout=None,
+                poll=lambda: supervisor.process.poll() if supervisor else None)
+            return observed
+        log = locker_log(session.output / "locker.redacted.log")
         def consume():
             with fifo.open("rb") as stream:
-                log.process = SimpleNamespace(stdout=stream, poll=lambda: supervisor.process.poll() if supervisor else None)
+                log.process.stdout = stream
                 log.consume()
         reader = threading.Thread(target=consume, daemon=True)
         log.thread = reader
@@ -151,6 +160,67 @@ def main():
         outcomes = {"stage": str(stage), "supervised_no_video_real_pam_unlock0_desktop": True,
                     "same_pid_exec_owner": qs_pid, "stale_readiness_reconnect_removed": True,
                     "duplicate_waited_engaging_then_confirmed_exit0": True}
+
+        # Cold-load the real installed lock for each external release route.
+        # The third leg keeps the real Lock/WlSessionLock and injects only PAM
+        # to observe cancellation and normal Loader teardown (T2).
+        fixture_shell = session.output / "release-fixture"
+        shutil.copytree(stage / "share/aerial-lock", fixture_shell)
+        (fixture_shell / "Tests").mkdir()
+        shutil.copyfile(root / "src/aerial-lock/Tests/lock-release-shell.qml",
+                        fixture_shell / "Tests/lock-release-shell.qml")
+        (fixture_shell / "shell.qml").write_text(
+            'import QtQuick\nimport Quickshell\nShellRoot { settings.watchFiles: false; '
+            'Loader { source: "root:/Tests/lock-release-shell.qml" } }\n')
+        for name, shell_dir in (("release-dbus", stage / "share/aerial-lock"),
+                                ("release-signal", stage / "share/aerial-lock"),
+                                ("release-qml", fixture_shell)):
+            # Each outcome owns its compositor/input state. Reusing niri's
+            # virtual keyboard state across desktop probes can suppress F12
+            # even without any locker (see the isolated desktop diagnostic).
+            # Start a fresh owned cycle, as the remediation driver does.
+            session.cleanup()
+            session.start()
+            env.update(WAYLAND_DISPLAY=session.env["WAYLAND_DISPLAY"], NIRI_SOCKET=session.env["NIRI_SOCKET"])
+            session.assert_control()
+            socket_path = os.path.realpath(Path(env["XDG_RUNTIME_DIR"]) / env["WAYLAND_DISPLAY"])
+            service = "org.aeriallock.Supervisor.s" + hashlib.sha256(socket_path.encode()).hexdigest()[:32]
+            release_env = dict(env, PATH=str(stage / "bin") + os.pathsep + env["PATH"],
+                               AERIAL_LOCK_SHELL=str(shell_dir))
+            log = locker_log(session.output / (name + "-locker.redacted.log"))
+            reader = threading.Thread(target=consume, daemon=True)
+            log.thread = reader
+            reader.start()
+            # A bare argv[0] matches the documented pkill -f expression.
+            supervisor = driver.ObservedProcess(["aerial-lock-supervisor"], release_env,
+                                                session.output / (name + "-supervisor.log"))
+            log.wait_line(lambda line: "ext_session_lock_v1" in line and ".locked()" in line)
+            supervisor.wait_line(lambda line: "state: locked" in line)
+            children = [pid for pid in descendants(supervisor.process.pid)
+                        if Path(f"/proc/{pid}/comm").read_text().strip() == "qs"]
+            assert len(children) == 1
+            qs_pid = children[0]
+            if name == "release-signal":
+                matches = subprocess.run(["pgrep", "-f", "^aerial-lock-supervisor"], env=release_env,
+                                         capture_output=True, text=True, check=True, timeout=5)
+                assert matches.stdout.split() == [str(supervisor.process.pid)], "signal only the owned instance"
+                subprocess.run(["pkill", "-USR1", "-f", "^aerial-lock-supervisor"], env=release_env,
+                               check=True, timeout=5)
+            else:
+                subprocess.run(["busctl", "--user", "call", service, "/org/aeriallock/Supervisor",
+                                "org.aeriallock.Supervisor", "Release"], env=release_env, check=True, timeout=5)
+            log.wait_line(lambda line: ".unlock_and_destroy()" in line, 20)
+            assert supervisor.finish(20) == 0
+            assert not Path(f"/proc/{qs_pid}").exists()
+            supervisor.wait_line(lambda line: "state: ended" in line)
+            assert sum("launching locker, attempt" in line for _, line in supervisor.lines) == 1
+            reader.join(2)
+            assert not reader.is_alive()
+            if name == "release-qml":
+                log.wait_line(lambda line: "LOCK_RELEASE_OUTCOME assertions=7 failed=false" in line)
+                outcomes["qml_release_pam_aborted_tree_destroyed_unlocked_once"] = True
+            session.desktop()
+            outcomes[name + "_unlock0_desktop"] = True
         plugin_root = str(stage / "lib/aerial-lock/qt-plugins")
         for name, program, plugin, fault, child_exit in (
                 ("failed-start", str(session.output / "missing-runner"), plugin_root, None, 72),

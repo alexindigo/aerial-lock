@@ -88,6 +88,16 @@ backend, and fails anywhere else if video does not start) and output-selection
 policy. `-DAERIAL_LOCK_VM_RECORD=<manifest>` adds the `owned-instance`
 regression for a prepared VM (below).
 
+`supervisor-release` uses a private bus and stub direct-child runners to
+observe exactly `release\n`, pending engagement, D-Bus/SIGUSR1 parity,
+idempotence, no respawn after clean or abnormal release, a waiting duplicate's
+SIGUSR1 immunity (exit 0/4 unchanged), and the child's unblocked SIGUSR1 mask.
+Its terminal probe pumps the production Supervisor after normal episode
+completion, without entering `app.exec()`, to check the actual
+`org.aeriallock.Supervisor.Error.NotLocked` reply for ended/failed states;
+there is no product test switch. Offscreen `tst_engagement_report.qml` checks
+the exact command and one-warning policy at the inactive transport boundary.
+
 ## Real-session integration drivers
 
 `run-remediation.sh` (→ `remediation-driver.py`), `launch-integration.py` and
@@ -155,6 +165,15 @@ confirmation; beside each failed start it must exit 4. `--stage` can select a se
 install prefix inside the workspace. `nested-launch-integration.py` checks the
 development template with `--backend niri --vm-key` (emulated guest keyboard)
 or `--backend hyprland --ipc-control` (compositor spawn path, not native keys).
+
+The staged launch driver also cold-loads a real locker for each D-Bus
+`Release()` and documented `pkill -USR1 -f '^aerial-lock-supervisor'` route:
+it observes `unlock_and_destroy`, supervisor exit 0 without respawn and desktop
+input afterwards. `lock-release-shell.qml` adds a real QML lock with a
+synthetic in-flight PAM endpoint: release must abort PAM before synchronous
+completion, clear pending state, emit `unlocked()` once and destroy the Loader
+tree through the normal path. This is the Lock.release() QML regression;
+offscreen shims do not substitute for the real session-lock lifecycle.
 
 Prepare authentication fixtures only in the disposable guest. Save original
 credentials root-only before changing them, pass fixture secrets through stdin,

@@ -128,6 +128,10 @@ ShellRoot {
     Services.EngagementReport {
         path: Quickshell.env("AERIAL_LOCK_ENGAGEMENT_SOCKET") || ""
         secure: root.lock !== null && root.lock.secure
+        onReleaseRequested: {
+            if (root.lock !== null)
+                root.lock.release()
+        }
     }
 
     Timer {
