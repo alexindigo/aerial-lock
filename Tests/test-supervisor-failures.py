@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exit-status timing distinguishes a refused lock from uncertain engagement."""
+from contextlib import ExitStack
 import hashlib
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from private_runtime import PrivateRuntime
 
 supervisor = Path(sys.argv[1]).resolve(strict=True)
 runner_path = Path(sys.argv[2]).resolve(strict=True)
@@ -85,16 +87,17 @@ def runner_cases(root):
     result, marker = run_runner(root, "runtime-unusable", normal, [("qs", fake_qs, 0o700)], runtime=blocked)
     assert result.returncode == 0 and marker.read_text() == "unset", (result.returncode, result.stderr)
     print("RUNNER_OPTIONAL_RUNTIME_DIR_PASS")
-with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory:
+with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory, ExitStack() as runtimes:
     root = Path(directory)
     runner_cases(root)
     for name, codes, expected, message in cases:
         case = root / name
         case.mkdir()
+        runtime = runtimes.enter_context(PrivateRuntime("wayland"))
         # Accepting the connection is enough for the supervisor's liveness
         # check; no session-lock request is issued by these synthetic runners.
         listener = socket.socket(socket.AF_UNIX)
-        listener.bind(str(case / "wayland"))
+        listener.bind(str(runtime / "wayland"))
         listener.listen(16)
         stub = case / "runner"
         if codes is not None:
@@ -103,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory:
                 # Confirm the lock over the supervisor's channel, then die only
                 # once the supervisor itself reports the confirmation.
                 service = "org.aeriallock.Supervisor.s" + hashlib.sha256(
-                    os.path.realpath(case / "wayland").encode()).hexdigest()[:32]
+                    os.path.realpath(runtime / "wayland").encode()).hexdigest()[:32]
                 report = ("import os, socket, subprocess, time\n"
                           "s = socket.socket(socket.AF_UNIX)\n"
                           "s.connect(os.environ['AERIAL_LOCK_ENGAGEMENT_SOCKET'])\n"
@@ -124,7 +127,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory:
             stub.chmod(0o700)
         env = {k: v for k, v in os.environ.items()
                if k not in ("HYPRLAND_INSTANCE_SIGNATURE", "AERIAL_LOCK_VIDEO_POOL", "WAYLAND_SOCKET")}
-        env.update(WAYLAND_DISPLAY=str(case / "wayland"), XDG_RUNTIME_DIR=str(case),
+        env.update(WAYLAND_DISPLAY=str(runtime / "wayland"), XDG_RUNTIME_DIR=str(runtime),
                    AERIAL_LOCK_RUNNER=str(runner_path if name in ("missing-plugin", "missing-qs") else stub),
                    AERIAL_LOCK_PLUGIN_ROOT=str(case / "missing"), AERIAL_LOCK_SHELL=str(case))
         if name == "missing-qs":

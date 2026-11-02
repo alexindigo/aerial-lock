@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from private_runtime import PrivateRuntime
 
 SUPERVISOR = Path(sys.argv[1]).resolve(strict=True)
 UNCONFIRMED = 4
@@ -36,10 +37,9 @@ def wait_for(predicate, timeout, what):
     raise AssertionError("timed out waiting for " + what)
 
 
-with tempfile.TemporaryDirectory(prefix="aerial-supervisor-") as directory:
+with tempfile.TemporaryDirectory(prefix="aerial-supervisor-") as directory, \
+        PrivateRuntime("bus", "wayland-a", "wayland-b", "wayland-c", "wayland-d") as runtime:
     root = Path(directory)
-    runtime = root / "runtime"
-    runtime.mkdir(mode=0o700)
     listeners = []
     for name in ("wayland-a", "wayland-b", "wayland-c", "wayland-d"):
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-supervisor-") as directory:
                       "    time.sleep(0.02)\n")
     runner.chmod(0o700)
     bus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1",
-                            "--address=unix:path=" + str(root / "bus")],
+                            "--address=unix:path=" + str(runtime / "bus")],
                            stdout=subprocess.PIPE, text=True)
     supervisors = []
     impostors = []

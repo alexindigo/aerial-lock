@@ -8,9 +8,10 @@ import socket
 import subprocess
 import sys
 import tempfile
+from private_runtime import PrivateRuntime
 
 source = Path(sys.argv[1]).resolve(strict=True)
-with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d:
+with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRuntime("wayland") as runtime:
     root = Path(d)
     tree = root / "source"
     shutil.copytree(source, tree, ignore=shutil.ignore_patterns(".git", "build", "__pycache__", "*.so"))
@@ -38,12 +39,12 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d:
                       f"Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n")
     runner.chmod(0o700)
     listener = socket.socket(socket.AF_UNIX)
-    listener.bind(str(root / "wayland"))
+    listener.bind(str(runtime / "wayland"))
     listener.listen(16)
     env = {k: v for k, v in os.environ.items()
            if k not in ("AERIAL_LOCK_RUNNER", "AERIAL_LOCK_SHELL", "AERIAL_LOCK_PLUGIN_ROOT",
                         "AERIAL_LOCK_VIDEO_POOL", "HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_SOCKET")}
-    env.update(WAYLAND_DISPLAY=str(root / "wayland"), XDG_RUNTIME_DIR=str(root))
+    env.update(WAYLAND_DISPLAY=str(runtime / "wayland"), XDG_RUNTIME_DIR=str(runtime))
     result = subprocess.run(["dbus-run-session", "--", str(b / "bin/aerial-lock-supervisor")],
                             env=env, capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr

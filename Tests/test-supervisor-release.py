@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from private_runtime import PrivateRuntime, assert_socket_paths
 
 supervisor = Path(sys.argv[1]).resolve(strict=True)
 terminal_probe = Path(sys.argv[2]).resolve(strict=True) if len(sys.argv) > 2 else None
@@ -24,10 +25,8 @@ def wait_for(predicate, what, timeout=10):
     raise AssertionError("timed out: " + what)
 
 
-with tempfile.TemporaryDirectory(prefix="release-") as directory:
+with tempfile.TemporaryDirectory(prefix="release-") as directory, PrivateRuntime("bus") as runtime:
     root = Path(directory)
-    runtime = root / "r"
-    runtime.mkdir(mode=0o700)
     runner = root / "runner"
     runner.write_text('''#!/usr/bin/python3
 import os, socket, time
@@ -55,7 +54,7 @@ while True:
 ''')
     runner.chmod(0o700)
     bus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1",
-                            "--address=unix:path=" + str(root / "bus")],
+                            "--address=unix:path=" + str(runtime / "bus")],
                            stdout=subprocess.PIPE, text=True)
     processes, listeners, cases = [], [], []
     try:
@@ -76,6 +75,7 @@ while True:
             return call(display, "State").stdout.strip()
 
         def start_case(name, engaging=False, code=0, probe=False):
+            assert_socket_paths(runtime / name)
             case = root / name
             case.mkdir()
             cases.append(case)
