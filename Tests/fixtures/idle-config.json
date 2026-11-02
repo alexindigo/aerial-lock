@@ -1,0 +1,14 @@
+[
+  {"name":"missing", "missing":true},
+  {"name":"empty", "user":{}},
+  {"name":"partial", "user":{"idle":{"timeoutSeconds":300}}},
+  {"name":"all", "user":{"idle":{"timeoutSeconds":12,"respectInhibitors":false,"lockOnSuspend":false,"logindLockUnlock":false}}},
+  {"name":"wrong-leaves", "user":{"idle":{"timeoutSeconds":"300","respectInhibitors":0,"lockOnSuspend":"false","logindLockUnlock":null}}, "warnings":4},
+  {"name":"wrong-object", "user":{"idle":[]}, "warnings":4},
+  {"name":"null-object", "user":{"idle":null}, "warnings":4},
+  {"name":"negative", "user":{"idle":{"timeoutSeconds":-1}}, "warnings":1},
+  {"name":"fractional", "user":{"idle":{"timeoutSeconds":0.5}}, "warnings":1},
+  {"name":"extra-nested", "user":{"idle":{"unknown":{"left":[1,2],"right":true}}}},
+  {"name":"extra-scalars", "user":{"idle":{"unknown":false},"unrelated":{"array":[1,2]}}},
+  {"name":"large", "user":{"idle":{"timeoutSeconds":1000000000000}}}
+]

@@ -13,6 +13,7 @@ DEBUG_VERBOSE ?= 0
 
 WAYLAND_PROTOCOLS ?= /usr/share/wayland-protocols
 SESSION_LOCK_XML := $(WAYLAND_PROTOCOLS)/staging/ext-session-lock/ext-session-lock-v1.xml
+IDLE_NOTIFY_XML := $(WAYLAND_PROTOCOLS)/staging/ext-idle-notify/ext-idle-notify-v1.xml
 
 # Native objects stay inside this tree (gitignored, removed by `clean`), so
 # concurrent builds of different checkouts never share or mix objects, and
@@ -23,11 +24,12 @@ OBJDIR ?= build
 UNLOCK_OBJS := $(OBJDIR)/aerial-unlock-proto.o $(OBJDIR)/aerial-unlock-main.o
 SUPERVISOR_OBJS := $(OBJDIR)/aerial-supervisor-proto.o $(OBJDIR)/aerial-supervisor-main.o
 GUARD_OBJS := $(OBJDIR)/connection-guard.o
+IDLE_OBJS := $(OBJDIR)/aerial-idle-main.o $(OBJDIR)/aerial-idle-proto.o
 GUARD_PLUGIN := native/qt-plugins/generic/libAerialLockConnectionGuard.so
 
 .PHONY: all install uninstall dev clean pam-limits build-flags force-native-config
 
-all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor $(GUARD_PLUGIN)
+all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor idle/aerial-idle $(GUARD_PLUGIN)
 
 # Make cannot see variable changes in a command line. One content-stable
 # prerequisite records the effective native configuration, so an incremental
@@ -40,6 +42,7 @@ CFLAGS=$(CFLAGS)
 CXXFLAGS=$(CXXFLAGS)
 LDFLAGS=$(LDFLAGS)
 DATADIR=$(DATADIR)
+BINDIR=$(BINDIR)
 LIBEXECDIR=$(LIBEXECDIR)
 PLUGINROOT=$(PLUGINROOT)
 endef
@@ -51,7 +54,7 @@ $(OBJDIR)/native-config: force-native-config | $(OBJDIR)
 	$(file >$@.tmp,$(NATIVE_CONFIG))
 	@cmp -s $@.tmp $@ && rm -f $@.tmp || mv -f $@.tmp $@
 
-$(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS): $(OBJDIR)/native-config
+$(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS) $(IDLE_OBJS): $(OBJDIR)/native-config
 
 # Phony on purpose: the value can come from the environment, which Make
 # cannot express as a file prerequisite. The generator is sub-second, so
@@ -136,6 +139,26 @@ supervisor/aerial-lock-supervisor: $(SUPERVISOR_OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJDIR)/aerial-supervisor-main.o $(OBJDIR)/aerial-supervisor-proto.o \
 		$$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
 
+idle/ext-idle-notify-v1-client.h: $(IDLE_NOTIFY_XML)
+	wayland-scanner client-header $< $@
+
+idle/ext-idle-notify-v1-protocol.c: $(IDLE_NOTIFY_XML)
+	wayland-scanner private-code $< $@
+
+idle/aerial-idle.moc: idle/aerial-idle.cpp
+	/usr/lib/qt6/moc $< -o $@
+
+$(OBJDIR)/aerial-idle-proto.o: idle/ext-idle-notify-v1-protocol.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< $$(pkg-config --cflags wayland-client) -o $@
+
+$(OBJDIR)/aerial-idle-main.o: idle/aerial-idle.cpp idle/aerial-idle.moc idle/ext-idle-notify-v1-client.h native/session-identity.h
+	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) -fPIC -c $< -Iidle \
+		-DAERIAL_IDLE_DATADIR='"$(DATADIR)"' -DAERIAL_IDLE_LOCK_COMMAND='"$(BINDIR)/aerial-lock"' \
+		$$(pkg-config --cflags Qt6Core Qt6DBus wayland-client) -o $@
+
+idle/aerial-idle: $(IDLE_OBJS)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(IDLE_OBJS) $$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
+
 install: all
 	install -d $(DESTDIR)$(DATADIR)
 	install -d $(DESTDIR)$(DATADIR)/Modules/Lock
@@ -197,6 +220,10 @@ install: all
 	install -m 755 Scripts/aerial-lock-fetch $(DESTDIR)$(BINDIR)/aerial-lock-fetch
 	install -m 755 recovery/aerial-unlock $(DESTDIR)$(BINDIR)/aerial-unlock
 	install -m 755 supervisor/aerial-lock-supervisor $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
+	install -m 755 idle/aerial-idle $(DESTDIR)$(BINDIR)/aerial-idle
+	install -d $(DESTDIR)$(PREFIX)/lib/systemd/user $(DESTDIR)$(DATADIR)/examples
+	install -m 644 systemd/aerial-idle.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
+	install -m 644 examples/idle.json $(DESTDIR)$(DATADIR)/examples/
 	install -d $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(PLUGINROOT)/generic
 	install -m 755 Scripts/aerial-lock-run $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run
 	install -m 755 $(GUARD_PLUGIN) $(DESTDIR)$(PLUGINROOT)/generic/
@@ -209,6 +236,7 @@ uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-fetch
 	rm -f $(DESTDIR)$(BINDIR)/aerial-unlock
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
+	rm -f $(DESTDIR)$(BINDIR)/aerial-idle $(DESTDIR)$(PREFIX)/lib/systemd/user/aerial-idle.service
 	rm -f $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run $(DESTDIR)$(PLUGINROOT)/generic/libAerialLockConnectionGuard.so
 	rm -f $(DESTDIR)$(PAMDIR)/aerial-lock
 
@@ -217,7 +245,8 @@ clean:
 	rm -f recovery/aerial-unlock recovery/ext-session-lock-v1-client.h recovery/ext-session-lock-v1-protocol.c
 	rm -f supervisor/aerial-lock-supervisor supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
 	rm -f native/connection-guard.moc $(GUARD_PLUGIN)
-	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS)
+	rm -f idle/aerial-idle idle/aerial-idle.moc idle/ext-idle-notify-v1-client.h idle/ext-idle-notify-v1-protocol.c
+	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS) $(IDLE_OBJS)
 	rm -f $(OBJDIR)/native-config $(OBJDIR)/native-config.tmp
 	@rmdir $(OBJDIR) 2>/dev/null || true
 

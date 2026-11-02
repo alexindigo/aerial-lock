@@ -93,3 +93,39 @@ add_executable(virtual-pointer-probe virtual-pointer-probe.c
     "${CMAKE_CURRENT_BINARY_DIR}/virtual-pointer-protocol.c")
 target_include_directories(virtual-pointer-probe PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(virtual-pointer-probe PRIVATE PkgConfig::WAYLAND)
+
+# Fake services run only on caller-created private buses.
+add_executable(idle-bus-fixture idle-bus-fixture.cpp)
+target_link_libraries(idle-bus-fixture PRIVATE Qt6::Core Qt6::DBus)
+add_test(NAME idle-config
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-idle-config.py"
+            "${AERIAL_LOCK_SOURCE}/idle/aerial-idle" "${QMLTESTRUNNER}")
+add_test(NAME idle-logind
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-idle-logind.py"
+            "${AERIAL_LOCK_SOURCE}/idle/aerial-idle"
+            "${AERIAL_LOCK_SOURCE}/supervisor/aerial-lock-supervisor"
+            "$<TARGET_FILE:idle-bus-fixture>")
+
+pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+set(IDLE_INHIBIT_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml")
+set(IDLE_XDG_XML "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+foreach(protocol IN ITEMS idle-inhibit idle-xdg-shell)
+    if(protocol STREQUAL "idle-inhibit")
+        set(xml "${IDLE_INHIBIT_XML}")
+    else()
+        set(xml "${IDLE_XDG_XML}")
+    endif()
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${protocol}-client.h"
+        COMMAND "${WAYLAND_SCANNER}" client-header "${xml}" "${CMAKE_CURRENT_BINARY_DIR}/${protocol}-client.h"
+        DEPENDS "${xml}")
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${protocol}-protocol.c"
+        COMMAND "${WAYLAND_SCANNER}" private-code "${xml}" "${CMAKE_CURRENT_BINARY_DIR}/${protocol}-protocol.c"
+        DEPENDS "${xml}")
+endforeach()
+add_executable(idle-inhibit-probe idle-inhibit-probe.c
+    "${CMAKE_CURRENT_BINARY_DIR}/idle-inhibit-client.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/idle-inhibit-protocol.c"
+    "${CMAKE_CURRENT_BINARY_DIR}/idle-xdg-shell-client.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/idle-xdg-shell-protocol.c")
+target_include_directories(idle-inhibit-probe PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(idle-inhibit-probe PRIVATE PkgConfig::WAYLAND)

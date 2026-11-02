@@ -25,7 +25,11 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRun
     make(a, "clean")
     make(a)
     objects = sorted((tree / "build").glob("*.o"))
-    assert len(objects) == 5, objects
+    assert {p.name for p in objects} == {
+        "aerial-unlock-main.o", "aerial-unlock-proto.o",
+        "aerial-supervisor-main.o", "aerial-supervisor-proto.o",
+        "aerial-idle-main.o", "aerial-idle-proto.o", "connection-guard.o"
+    }, objects
     before = [p.stat().st_mtime_ns for p in objects]
     make(b, "install", "PAMDIR=" + str(root / "pam"))
     after = [p.stat().st_mtime_ns for p in objects]
@@ -50,9 +54,17 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRun
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(marker.read_text()) == ["--shell-dir", str(b / "share/aerial-lock"),
                                               "--plugin-root", str(b / "lib/aerial-lock/qt-plugins")]
+    # The companion must consume its new compiled data path too, rather than
+    # a stale prefix or a user-config override. --print-config opens no bus.
+    idle_env = dict(env, XDG_CONFIG_HOME=str(root / "empty-config"))
+    result = subprocess.run([str(b / "bin/aerial-idle"), "--print-config"], env=idle_env,
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stdout + result.stderr
+    defaults = json.loads((b / "share/aerial-lock/Config/defaults.json").read_text())
+    assert json.loads(result.stdout) == defaults["idle"]
     listener.close()
     make(b)
     assert after == [p.stat().st_mtime_ns for p in objects], "unchanged configuration rebuilt native objects"
     make(b, "CXXFLAGS=-O1 -frecord-gcc-switches")
     assert all(p.stat().st_mtime_ns > old for p, old in zip(objects, after)), "changed flags reused native objects"
-    print("BUILD_CONFIG_PASS paths_consumed_by_installed_supervisor stable_noop flags_rebuilt")
+    print("BUILD_CONFIG_PASS paths_consumed_by_installed_supervisor_and_idle stable_noop flags_rebuilt")

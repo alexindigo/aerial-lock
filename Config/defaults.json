@@ -6,6 +6,12 @@
   "pamService": "aerial-lock",
   "fallbackQuitMs": 3000,
   "pamWatchdogTimeoutMs": 60000,
+  "idle": {
+    "timeoutSeconds": 0,
+    "respectInhibitors": true,
+    "lockOnSuspend": true,
+    "logindLockUnlock": true
+  },
   "panel": {
     "widthMax": 360,
     "fieldHeight": 40,

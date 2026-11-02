@@ -34,3 +34,9 @@ native/qt-plugins/
 
 # Native objects (Makefile OBJDIR)
 /build/
+
+# Idle daemon (build-generated protocol + C++/moc)
+idle/aerial-idle
+idle/aerial-idle.moc
+idle/ext-idle-notify-v1-client.h
+idle/ext-idle-notify-v1-protocol.c

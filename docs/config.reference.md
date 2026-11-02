@@ -74,6 +74,26 @@ rewritten into `sources` entries (`video` → `file`, `videoDir` → `folder`,
 migrated Apple source caches at `…/aerial-lock/Apple-TV/` — rename the old
 directory if you want to keep the already-downloaded clips.
 
+### `idle` (object)
+
+Read once when `aerial-idle` starts. Restart `aerial-idle.service` after editing
+these settings. The locker accepts this object but leaves idle policy to the
+companion. Enabling the service without a user config enables suspend and
+logind lock/unlock handling; the inactivity timeout remains off.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `timeoutSeconds` | integer ≥ 0 | `0` | Lock after this much inactivity; `0` disables the timeout. Very large values saturate at the Wayland protocol's maximum millisecond timeout. |
+| `respectInhibitors` | boolean | `true` | Visible video/presentation idle inhibitors postpone the timeout. If false, input alone resets the timer (requires ext-idle-notify v2; v1 warns and falls back to respecting inhibitors). |
+| `lockOnSuspend` | boolean | `true` | Hold a logind sleep-delay inhibitor until the supervisor confirms the lock, bounded by logind's delay limit minus 500 ms. |
+| `logindLockUnlock` | boolean | `true` | Honour the graphical session's logind `Lock` and `Unlock` events. |
+
+The installed `/usr/share/aerial-lock/examples/idle.json` sets a five-minute
+timeout. It is an example only and is never loaded automatically. Copy its
+`idle` object into your config to opt in. Partial objects merge recursively;
+wrong-typed fields (including negative or fractional timeouts) fall back to
+their individual defaults with a warning. The companion never rewrites the file.
+
 ### `panel` (object)
 
 | Field         | Type   | Default | Description                     |
@@ -321,5 +341,4 @@ AERIAL_LOCK_PAM_SERVICE=login bash Scripts/dev/run.sh
 }
 ```
 
-Additional fields will be added in future phases for overlays
-and idle behavior.
+Additional fields will be added in future phases for overlays.

@@ -56,6 +56,8 @@ def main():
     bus = None
     qs_pid = None
     reader = None
+    idle = None
+    inhibit = None
     passed = False
     try:
         session.start()
@@ -253,6 +255,85 @@ def main():
                     else "lock engagement not confirmed; the screen may be unlocked") in lines
             if name == "failed-start": assert lines.count("child process error:") == 3
             outcomes[name + "_settled_once_three_attempts_exit3_duplicate_exit4"] = True
+        # Each idle outcome has its own compositor and private buses. No idle
+        # daemon or inhibitor is installed into the guest's real user session.
+        for inhibited in (False, True):
+            name = "idle-inhibited" if inhibited else "idle-timeout"
+            session.cleanup()
+            session.start()
+            session.config(media=False)
+            config_path = session.output / "config/aerial-lock/config.json"
+            config = json.loads(config_path.read_text())
+            config["idle"] = {"timeoutSeconds": 5, "respectInhibitors": True,
+                              "lockOnSuspend": False, "logindLockUnlock": False}
+            config_path.write_text(json.dumps(config))
+            env.update(WAYLAND_DISPLAY=session.env["WAYLAND_DISPLAY"], NIRI_SOCKET=session.env["NIRI_SOCKET"])
+            socket_path = os.path.realpath(Path(env["XDG_RUNTIME_DIR"]) / env["WAYLAND_DISPLAY"])
+            service = "org.aeriallock.Supervisor.s" + hashlib.sha256(socket_path.encode()).hexdigest()[:32]
+            idle_env = dict(env, AERIAL_IDLE_LOCK_COMMAND=str(stage / "bin/aerial-lock"),
+                            PATH=str(stage / "bin") + os.pathsep + env["PATH"],
+                            DBUS_SYSTEM_BUS_ADDRESS=env["DBUS_SESSION_BUS_ADDRESS"])
+            log = locker_log(session.output / (name + "-locker.redacted.log"))
+            reader = threading.Thread(target=consume, daemon=True)
+            log.thread = reader
+            reader.start()
+            if inhibited:
+                probe = root / "build/debug/aerial-tests/idle-inhibit-probe"
+                inhibit = driver.ObservedProcess([str(probe)], idle_env, session.output / (name + "-probe.log"))
+                inhibit.wait_line(lambda line: "INHIBITOR_VISIBLE frame-presented" in line)
+                windows = subprocess.run(["niri", "msg", "-j", "windows"], env=idle_env,
+                                         check=True, capture_output=True, text=True, timeout=5)
+                assert any(w.get("app_id") == "aerial-idle-inhibit-probe" for w in json.loads(windows.stdout))
+                (session.output / (name + "-windows.json")).write_text(windows.stdout)
+            begin = time.monotonic()
+            idle = driver.ObservedProcess([str(stage / "bin/aerial-idle")], idle_env,
+                                          session.output / (name + "-daemon.log"))
+            supervisor = idle  # detached supervisor logs inherit the daemon's output
+            idle.wait_line(lambda line: "aerial-idle: ready" in line)
+
+            def on_duty_pid():
+                nonlocal qs_pid
+                result = subprocess.run(["busctl", "--address=" + env["DBUS_SESSION_BUS_ADDRESS"], "call",
+                    "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                    "GetConnectionUnixProcessID", "s", service], env=idle_env,
+                    capture_output=True, text=True, timeout=5)
+                if result.returncode:
+                    return None
+                pid = int(result.stdout.split()[1])
+                children = [child for child in descendants(pid)
+                            if Path(f"/proc/{child}/comm").read_text().strip() == "qs"]
+                if children:
+                    qs_pid = children[0]
+                return pid
+
+            if inhibited:
+                while time.monotonic() - begin < 15:
+                    assert on_duty_pid() is None, "visible real idle inhibitor must prevent any lock start for 15s"
+                    assert inhibit.process.poll() is None and idle.process.poll() is None
+                    time.sleep(0.1)
+                inhibit.process.terminate()
+                assert inhibit.finish(5) == 0
+                inhibit = None
+                begin = time.monotonic()
+            log.wait_line(lambda line: "ext_session_lock_v1" in line and ".locked()" in line, 10)
+            elapsed = time.monotonic() - begin
+            assert elapsed <= 10 and (inhibited or elapsed >= 5), elapsed
+            idle.wait_line(lambda line: "state: locked" in line)
+            pid = on_duty_pid()
+            assert pid and qs_pid and Path(f"/proc/{qs_pid}").exists()
+            session.type_and_submit()
+            log.wait_line(lambda line: ".unlock_and_destroy()" in line, 20)
+            idle.wait_line(lambda line: "state: ended" in line, 20)
+            idle.wait_line(lambda line: "child finished: exit=0 status=0" in line)
+            assert not Path(f"/proc/{qs_pid}").exists()
+            idle.process.terminate()
+            assert idle.finish(5) == 0
+            idle = None
+            reader.join(2)
+            assert not reader.is_alive()
+            session.desktop()
+            outcomes[name] = {"lock_confirmed_seconds": elapsed, "real_pam_unlock_exit0_desktop": True,
+                              "inhibited_seconds": 15 if inhibited else 0, "supervisor_pid": pid}
         (session.output / "launch-result.json").write_text(json.dumps(outcomes, indent=2))
         passed = True
         print(json.dumps({"results": str(session.output), "outcomes": outcomes}), flush=True)
@@ -267,7 +348,7 @@ def main():
                 signal.signal(sig, signal.SIG_IGN)
             print(json.dumps(receipt), flush=True)
             while Path(f"/proc/{qs_pid}").exists(): time.sleep(1)
-        for process in (duplicate, supervisor):
+        for process in (inhibit, idle, duplicate, supervisor):
             if process and process.process.poll() is None:
                 session.assert_control()
                 process.process.terminate()

@@ -40,6 +40,12 @@ Scope {
         pamService: "string",
         fallbackQuitMs: "number",
         pamWatchdogTimeoutMs: "number",
+        idle: ({
+            timeoutSeconds: "nonnegative-integer",
+            respectInhibitors: "boolean",
+            lockOnSuspend: "boolean",
+            logindLockUnlock: "boolean"
+        }),
         panel: ({
             widthMax: "number",
             fieldHeight: "number",
@@ -336,6 +342,12 @@ Scope {
         return result
     }
 
+    function matchesType(value, type) {
+        if (type === "nonnegative-integer")
+            return typeof value === "number" && isFinite(value) && value >= 0 && Math.floor(value) === value
+        return typeof value === type
+    }
+
     // Per-field type repair, never whole-config rejection: a wrong-typed
     // value falls back to its own default with a warning naming the path.
     function sanitise(candidate, defaults, spec, path) {
@@ -354,7 +366,7 @@ Scope {
                              + typeof candidate[key] + "); using default")
                     candidate[key] = defaults[key]
                 }
-            } else if (typeof candidate[key] !== spec[key]) {
+            } else if (!matchesType(candidate[key], spec[key])) {
                 Logger.w("ConfigStore", fullPath + " has wrong type (expected "
                          + spec[key] + ", got " + typeof candidate[key] + "); using default")
                 candidate[key] = defaults[key]
@@ -390,7 +402,7 @@ Scope {
                              + " (expected array)")
                     return false
                 }
-            } else if (typeof data[key] !== spec[key]) {
+            } else if (!matchesType(data[key], spec[key])) {
                 Logger.w("ConfigStore", "bundle defaults invalid at " + fullPath
                          + " (expected " + spec[key] + ", got " + typeof data[key] + ")")
                 return false
