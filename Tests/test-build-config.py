@@ -68,6 +68,25 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRun
     make(b, "CXXFLAGS=-O1 -frecord-gcc-switches")
     assert all(p.stat().st_mtime_ns > old for p, old in zip(objects, after)), "changed flags reused native objects"
 
+    # The installed unit must use the same configured binary directory as the
+    # native companion, never DESTDIR or a fixed distribution prefix.
+    for label, prefix, bindir in (("default", Path("/usr"), Path("/usr/bin")),
+                                  ("prefix", Path("/usr/local"), Path("/usr/local/bin")),
+                                  ("bindir", Path("/usr/local"), Path("/opt/aerial/bin"))):
+        stage = root / (label + "-stage")
+        options = ["DESTDIR=" + str(stage)]
+        if label == "bindir":
+            options.append("BINDIR=" + str(bindir))
+        make(prefix, "install", *options)
+        unit = stage / prefix.relative_to("/") / "lib/systemd/user/aerial-idle.service"
+        commands = [line for line in unit.read_text().splitlines() if line.startswith("ExecStart=")]
+        assert commands == [f"ExecStart={bindir}/aerial-idle"], (label, commands)
+        assert unit.stat().st_mode & 0o777 == 0o644, (label, oct(unit.stat().st_mode))
+        assert (stage / bindir.relative_to("/") / "aerial-idle").is_file()
+        print(f"UNIT_INSTALL_PASS {label} {commands[0]} mode=644", flush=True)
+        make(prefix, "uninstall", *options)
+        assert not any(p.is_file() for p in stage.rglob("*")), f"{label} uninstall left installed files"
+
     # Exercise the distributor's code-generation phase too. With LTO, Qt's
     # position-independence requirement must survive the final executable link,
     # not just the initial compilation. Arch's flags are the package-build
@@ -91,4 +110,4 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRun
                             capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout) == defaults["idle"]
-    print("BUILD_CONFIG_PASS paths_consumed_by_installed_supervisor_and_idle stable_noop flags_rebuilt packaging_lto")
+    print("BUILD_CONFIG_PASS paths_consumed_by_installed_supervisor_and_idle stable_noop flags_rebuilt unit_install_paths packaging_lto")

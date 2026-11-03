@@ -227,7 +227,8 @@ install: all
 	install -m 755 supervisor/aerial-lock-supervisor $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
 	install -m 755 idle/aerial-idle $(DESTDIR)$(BINDIR)/aerial-idle
 	install -d $(DESTDIR)$(PREFIX)/lib/systemd/user $(DESTDIR)$(DATADIR)/examples
-	install -m 644 systemd/aerial-idle.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
+	sed 's|@BINDIR@|$(BINDIR)|g' systemd/aerial-idle.service.in > $(OBJDIR)/aerial-idle.service
+	install -m 644 $(OBJDIR)/aerial-idle.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
 	install -m 644 examples/idle.json $(DESTDIR)$(DATADIR)/examples/
 	install -d $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(PLUGINROOT)/generic
 	install -m 755 Scripts/aerial-lock-run $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run
@@ -252,7 +253,7 @@ clean:
 	rm -f native/connection-guard.moc $(GUARD_PLUGIN)
 	rm -f idle/aerial-idle idle/aerial-idle.moc idle/ext-idle-notify-v1-client.h idle/ext-idle-notify-v1-protocol.c
 	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS) $(IDLE_OBJS)
-	rm -f $(OBJDIR)/native-config $(OBJDIR)/native-config.tmp
+	rm -f $(OBJDIR)/native-config $(OBJDIR)/native-config.tmp $(OBJDIR)/aerial-idle.service
 	@rmdir $(OBJDIR) 2>/dev/null || true
 
 dev: DEBUG_DISMISS=1

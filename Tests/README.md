@@ -93,7 +93,11 @@ regression for a prepared VM (below).
 it uses a minimal optimized LTO build. This exercises Qt's protected-data-symbol
 contract at final link, as well as compilation, and checks the rebuilt idle
 executable's effective config. Existing path-change, no-op and compiler-flag
-invalidation checks still run first.
+invalidation checks still run first. Staged installs check the unit generated
+from `systemd/aerial-idle.service.in` with the default prefix, `/usr/local`,
+and an explicit `BINDIR` override: `ExecStart` must name the installed binary
+without `DESTDIR`, the unit must have mode 644, and uninstall must remove the
+payload in each layout.
 
 `supervisor-release` uses a private bus and stub direct-child runners to
 observe exactly `release\n`, pending engagement, D-Bus/SIGUSR1 parity,
