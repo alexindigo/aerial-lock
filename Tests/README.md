@@ -123,8 +123,11 @@ the real supervisor with a stub runner. It checks lock deduplication, unlock
 forwarding, real inhibitor-FD lifetime through confirmation/deadline/resume,
 login1 replacement (including replacement without an old resume and failed
 state snapshots), bypass-started locks, typed transient-unit arguments and
-detached process ancestry. The fake systemd starts each child with exactly the
-unit's `Environment` property, after parsing all properties. Both launch paths
+detached process ancestry. The fake systemd merges its explicit manager
+environment with the unit's `Environment`, then applies `UnsetEnvironment`
+after parsing all properties. A stale manager shell override is replaced by a
+nonempty daemon override or removed when the daemon's override is unset/empty;
+the unset property must have D-Bus type `as`. Both launch paths
 check the shell override seen by the launched process and the supervisor's
 actual shell operand, including unset/empty compiled fallback without `/usr`.
 Daemon termination must leave the independent

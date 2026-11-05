@@ -77,7 +77,9 @@ public:
         } else if (method == "StartTransientUnit") {
             QJsonObject properties;
             QList<QProcess *> pending;
-            QProcessEnvironment environment;
+            QProcessEnvironment environment = managerEnvironment;
+            QStringList unsetEnvironment;
+            QString unsetEnvironmentSignature;
             const auto entries = qvariant_cast<QDBusArgument>(args.value(2));
             entries.beginArray();
             while (!entries.atEnd()) {
@@ -111,11 +113,17 @@ public:
                         const auto separator = entry.indexOf('=');
                         if (separator > 0) environment.insert(entry.left(separator), entry.mid(separator + 1));
                     }
+                } else if (key == "UnsetEnvironment") {
+                    unsetEnvironment = qdbus_cast<QStringList>(value.variant());
+                    properties[key] = QJsonArray::fromStringList(unsetEnvironment);
+                    unsetEnvironmentSignature = QString::fromLatin1(QDBusMetaType::typeToSignature(value.variant().metaType()));
                 } else properties[key] = value.variant().toString();
             }
             entries.endArray();
             // Parse every property before starting: ExecStart may precede
             // Environment, and the caller's environment is not the manager's.
+            // UnsetEnvironment is applied last, after manager/unit merging.
+            for (const auto &key : unsetEnvironment) environment.remove(key);
             for (auto *process : pending) {
                 process->setProcessEnvironment(environment);
                 process->start();
@@ -123,6 +131,8 @@ public:
             }
             recordEvent({{"event", "unit"}, {"signature", msg.signature()}, {"name", args.value(0).toString()},
                    {"mode", args.value(1).toString()}, {"properties", properties},
+                   {"managerEnvironment", QJsonArray::fromStringList(managerEnvironment.toStringList())},
+                   {"unsetEnvironmentSignature", unsetEnvironmentSignature},
                    {"auxSignature", qvariant_cast<QDBusArgument>(args.value(3)).currentSignature()}});
             connection.send(msg.createReply({QVariant::fromValue(QDBusObjectPath("/org/freedesktop/systemd1/job/1"))}));
         } else return false;
@@ -150,12 +160,17 @@ public:
             sys.registerVirtualObject("/org/freedesktop/login1", this, QDBusConnection::SubPath);
             sys.registerService("org.freedesktop.login1");
         } else if (op == "systemd") {
+            managerEnvironment = QProcessEnvironment();
+            const auto environment = command.value("environment").toObject();
+            for (auto it = environment.begin(); it != environment.end(); ++it)
+                managerEnvironment.insert(it.key(), it.value().toString());
             if (command.value("value").toBool()) bus.registerService("org.freedesktop.systemd1");
             else bus.unregisterService("org.freedesktop.systemd1");
         } else if (op == "quit") QCoreApplication::quit();
         recordEvent({{"event", "ack"}, {"op", op}, {"systemOwner", sys.baseService()}});
     }
     QDBusConnection sys, bus;
+    QProcessEnvironment managerEnvironment;
     QString sessionPath = QStringLiteral("/org/freedesktop/login1/session/test");
     int inhibitors = 0;
     int restarts = 0;

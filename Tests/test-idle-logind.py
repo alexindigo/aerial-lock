@@ -431,8 +431,9 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
                 name = ("systemd-" if systemd else "detached-") + label
                 c = case(name, shell=shell, idle_binary=tree / "idle/aerial-idle",
                          lock_supervisor=tree / "supervisor/aerial-lock-supervisor")
+                stale_shell = str(root / "stale-manager-shell")
                 if systemd:
-                    c.send("systemd", value=True)
+                    c.send("systemd", value=True, environment={"AERIAL_LOCK_SHELL": stale_shell})
                 c.start()
                 c.send("lock")
                 c.locked()
@@ -442,9 +443,16 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
                 assert launch["managerSentinel"] is None, (name, launch)
                 assert json.loads((c.root / "runner-args").read_text())[:2] == ["--shell-dir", str(source)]
                 if systemd:
-                    entries = c.await_event("unit")["properties"]["Environment"]
+                    unit = c.await_event("unit")
+                    assert unit["managerEnvironment"] == ["AERIAL_LOCK_SHELL=" + stale_shell], unit
+                    entries = unit["properties"]["Environment"]
                     assert [entry for entry in entries if entry.startswith("AERIAL_LOCK_SHELL=")] == (
                         ["AERIAL_LOCK_SHELL=" + shell] if shell else []), entries
+                    if shell:
+                        assert "UnsetEnvironment" not in unit["properties"], unit
+                    else:
+                        assert unit["properties"]["UnsetEnvironment"] == ["AERIAL_LOCK_SHELL"], unit
+                        assert unit["unsetEnvironmentSignature"] == "as", unit
                 c.release()
                 c.close(); cases.remove(c)
                 print("IDLE_SHELL_PROPAGATION", name, "launcher shell", repr(expected_shell), "runner shell", str(source))

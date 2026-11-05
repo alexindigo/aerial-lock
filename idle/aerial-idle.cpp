@@ -253,6 +253,9 @@ private:
             {QStringLiteral("CollectMode"), QDBusVariant(QStringLiteral("inactive-or-failed"))},
             {QStringLiteral("Description"), QDBusVariant(QStringLiteral("aerial-lock session lock"))}
         };
+        if (shell.isEmpty())
+            properties.append(UnitProperty{QStringLiteral("UnsetEnvironment"),
+                QDBusVariant(QStringList{QStringLiteral("AERIAL_LOCK_SHELL")})});
         const QString unit = QStringLiteral("aerial-lock-%1-%2.service").arg(getpid()).arg(++m_episode);
         call(m_bus, QStringLiteral("org.freedesktop.systemd1"), QStringLiteral("/org/freedesktop/systemd1"),
             QStringLiteral("org.freedesktop.systemd1.Manager"), QStringLiteral("StartTransientUnit"),
