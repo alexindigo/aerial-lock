@@ -19,12 +19,14 @@
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <signal.h>
 #include <sys/signalfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
 #include <fcntl.h>
 #include <wayland-client.h>
 #include "ext-idle-notify-v1-client.h"
@@ -95,10 +97,10 @@ static bool validTimeout(const QJsonValue &value)
         && std::floor(value.toDouble()) == value.toDouble();
 }
 
-static bool loadConfig(QJsonObject &idle)
+static bool loadConfig(const QString &shell, QJsonObject &idle)
 {
     QJsonObject defaults;
-    if (!readObject(shellDir(QStringLiteral(AERIAL_IDLE_DATADIR)) + QStringLiteral("/Config/defaults.json"), defaults, true))
+    if (!readObject(shell + QStringLiteral("/Config/defaults.json"), defaults, true))
         return false;
     const auto baseline = defaults.value("idle").toObject();
     if (!validTimeout(baseline.value("timeoutSeconds"))
@@ -127,7 +129,8 @@ static bool loadConfig(QJsonObject &idle)
 class Idle : public QObject {
     Q_OBJECT
 public:
-    explicit Idle(QJsonObject config) : m_config(std::move(config)),
+    explicit Idle(QJsonObject config, QString shell, bool shellOverride) : m_config(std::move(config)),
+        m_shellDir(std::move(shell)), m_shellOverride(shellOverride),
         m_bus(QDBusConnection::sessionBus()), m_system(QDBusConnection::systemBus())
     {
         m_poll.setInterval(PollMs);
@@ -245,15 +248,14 @@ private:
             if (qEnvironmentVariableIsSet(key))
                 environment << QString::fromLatin1(key) + '=' + qEnvironmentVariable(key);
         }
-        const QString shell = qEnvironmentVariable("AERIAL_LOCK_SHELL");
-        if (!shell.isEmpty()) environment << QStringLiteral("AERIAL_LOCK_SHELL=") + shell;
+        if (m_shellOverride) environment << QStringLiteral("AERIAL_LOCK_SHELL=") + m_shellDir;
         UnitProperties properties {
             {QStringLiteral("ExecStart"), QDBusVariant(QVariant::fromValue(UnitExecs{{path, {path}, false}}))},
             {QStringLiteral("Environment"), QDBusVariant(environment)},
             {QStringLiteral("CollectMode"), QDBusVariant(QStringLiteral("inactive-or-failed"))},
             {QStringLiteral("Description"), QDBusVariant(QStringLiteral("aerial-lock session lock"))}
         };
-        if (shell.isEmpty())
+        if (!m_shellOverride)
             properties.append(UnitProperty{QStringLiteral("UnsetEnvironment"),
                 QDBusVariant(QStringList{QStringLiteral("AERIAL_LOCK_SHELL")})});
         const QString unit = QStringLiteral("aerial-lock-%1-%2.service").arg(getpid()).arg(++m_episode);
@@ -271,6 +273,18 @@ private:
     void startDetached()
     {
         const QByteArray path = command();
+        // Prepare the absolute override and envp in the parent: setenv/Qt
+        // allocation is not safe between fork and exec in the detached child.
+        QByteArray shell = QByteArray("AERIAL_LOCK_SHELL=") + m_shellDir.toLocal8Bit();
+        std::vector<char *> environment;
+        for (char **entry = environ; *entry; ++entry) {
+            if (!m_shellOverride || strncmp(*entry, "AERIAL_LOCK_SHELL=", sizeof("AERIAL_LOCK_SHELL=") - 1) != 0)
+                environment.push_back(*entry);
+        }
+        if (m_shellOverride) environment.push_back(shell.data());
+        environment.push_back(nullptr);
+        char **const childEnvironment = environment.data();
+        char *const argv[] = {const_cast<char *>(path.constData()), nullptr};
         int channel[2];
         if (pipe2(channel, O_CLOEXEC) != 0) { qWarning("aerial-idle: launch pipe failed"); return; }
         const pid_t first = fork();
@@ -292,8 +306,7 @@ private:
             const int input = open("/dev/null", O_RDONLY);
             if (input < 0 || dup2(input, STDIN_FILENO) < 0) _exit(1);
             close_range(3, ~0U, 0);
-            char *const argv[] = {const_cast<char *>(path.constData()), nullptr};
-            execv(argv[0], argv);
+            execve(argv[0], argv, childEnvironment);
             _exit(127);
         }
         close(channel[1]);
@@ -519,6 +532,8 @@ private slots:
 
 private:
     QJsonObject m_config;
+    const QString m_shellDir;
+    const bool m_shellOverride;
     QDBusConnection m_bus, m_system;
     QString m_supervisor, m_loginOwner, m_sessionPath;
     QDBusUnixFileDescriptor m_inhibitor;
@@ -537,8 +552,10 @@ private:
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    const QString shell = shellDir(QStringLiteral(AERIAL_IDLE_DATADIR));
+    const bool shellOverride = !qgetenv("AERIAL_LOCK_SHELL").isEmpty();
     QJsonObject config;
-    if (!loadConfig(config)) return 1;
+    if (!loadConfig(shell, config)) return 1;
     if (app.arguments() == QStringList{app.arguments().first(), QStringLiteral("--print-config")}) {
         const QByteArray json = QJsonDocument(config).toJson(QJsonDocument::Compact) + '\n';
         return write(STDOUT_FILENO, json.constData(), json.size()) == json.size() ? 0 : 1;
@@ -554,7 +571,7 @@ int main(int argc, char **argv)
     QSocketNotifier termination(signalFd, QSocketNotifier::Read);
     QObject::connect(&termination, &QSocketNotifier::activated, &app, &QCoreApplication::quit);
     int result;
-    { Idle idle(config); result = idle.start() ? app.exec() : 1; }
+    { Idle idle(config, shell, shellOverride); result = idle.start() ? app.exec() : 1; }
     close(signalFd);
     return result;
 }

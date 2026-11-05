@@ -32,10 +32,11 @@ def wait_for(predicate, message, timeout=8):
 
 class Case:
     def __init__(self, root, name, settings=None, display_fallback=False,
-                 shell=str(source), idle_binary=binary, lock_supervisor=supervisor):
+                 shell=str(source), idle_binary=binary, lock_supervisor=supervisor, cwd=None):
         self.root = root / name
         self.root.mkdir()
         self.binary = idle_binary
+        self.cwd = cwd
         self.processes, self.buses, self.logs = [], [], []
         self.events, self.buffer = [], b""
         self.runtime_directory = PrivateRuntime("wayland", "session", "system")
@@ -53,7 +54,7 @@ import json, os
 from pathlib import Path
 p = Path(''' + repr(str(self.root)) + ''')
 with (p / "launches").open("a") as f:
-    f.write(json.dumps(dict(pid=os.getpid(), ppid=os.getppid(), sid=os.getsid(0),
+    f.write(json.dumps(dict(pid=os.getpid(), ppid=os.getppid(), sid=os.getsid(0), cwd=os.getcwd(),
                            shell=os.environ.get("AERIAL_LOCK_SHELL"),
                            managerSentinel=os.environ.get("IDLE_MANAGER_SENTINEL"))) + "\\n")
 os.execve(''' + repr(str(lock_supervisor)) + ''', [''' + repr(str(lock_supervisor)) + '''],
@@ -143,7 +144,7 @@ while not (p / "stop").exists():
 
     def start(self, inhibitor=True, session=True):
         self.idle = subprocess.Popen([str(self.binary)], env=self.env, stdout=self.log("idle.stdout"),
-                                     stderr=self.log("idle.stderr"))
+                                     stderr=self.log("idle.stderr"), cwd=self.cwd)
         self.processes.append(self.idle)
         if inhibitor:
             self.await_event("inhibit")
@@ -427,10 +428,13 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
                                     capture_output=True, text=True, timeout=120)
             assert result.returncode == 0, result.stdout + result.stderr
         for systemd in (False, True):
-            for label, shell in (("set", str(source)), ("unset", None), ("empty", "")):
+            for label, shell in (("set", str(source)), ("unset", None), ("empty", ""),
+                                 ("relative", "."), ("relative-clean", "./Config/../.")):
                 name = ("systemd-" if systemd else "detached-") + label
+                relative = label.startswith("relative")
+                expected_dir = str(tree) if relative else str(source)
                 c = case(name, shell=shell, idle_binary=tree / "idle/aerial-idle",
-                         lock_supervisor=tree / "supervisor/aerial-lock-supervisor")
+                         lock_supervisor=tree / "supervisor/aerial-lock-supervisor", cwd=tree)
                 stale_shell = str(root / "stale-manager-shell")
                 if systemd:
                     c.send("systemd", value=True, environment={"AERIAL_LOCK_SHELL": stale_shell})
@@ -438,16 +442,21 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
                 c.send("lock")
                 c.locked()
                 launch = c.launches()[0]
-                expected_shell = shell if shell or not systemd else None
+                expected_shell = expected_dir if shell else (shell if not systemd else None)
                 assert launch["shell"] == expected_shell, (name, launch)
+                if relative:
+                    if systemd:
+                        assert launch["cwd"] != str(tree), (name, launch)
+                    else:
+                        assert launch["cwd"] == str(tree), (name, launch)
                 assert launch["managerSentinel"] is None, (name, launch)
-                assert json.loads((c.root / "runner-args").read_text())[:2] == ["--shell-dir", str(source)]
+                assert json.loads((c.root / "runner-args").read_text())[:2] == ["--shell-dir", expected_dir]
                 if systemd:
                     unit = c.await_event("unit")
                     assert unit["managerEnvironment"] == ["AERIAL_LOCK_SHELL=" + stale_shell], unit
                     entries = unit["properties"]["Environment"]
                     assert [entry for entry in entries if entry.startswith("AERIAL_LOCK_SHELL=")] == (
-                        ["AERIAL_LOCK_SHELL=" + shell] if shell else []), entries
+                        ["AERIAL_LOCK_SHELL=" + expected_dir] if shell else []), entries
                     if shell:
                         assert "UnsetEnvironment" not in unit["properties"], unit
                     else:
@@ -455,7 +464,19 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
                         assert unit["unsetEnvironmentSignature"] == "as", unit
                 c.release()
                 c.close(); cases.remove(c)
-                print("IDLE_SHELL_PROPAGATION", name, "launcher shell", repr(expected_shell), "runner shell", str(source))
+                print("IDLE_SHELL_PROPAGATION", name, "launcher shell", repr(expected_shell), "runner shell", expected_dir)
+
+        # Direct supervisor callers also resolve their own relative operand.
+        c = case("supervisor-relative", shell="./Config/../.")
+        direct = subprocess.Popen([str(c.launcher)], env=c.env, cwd=tree,
+                                  stdout=c.log("direct.stdout"), stderr=c.log("direct.stderr"))
+        c.processes.append(direct)
+        c.locked()
+        assert json.loads((c.root / "runner-args").read_text())[:2] == ["--shell-dir", str(tree)]
+        c.release(via_idle=False)
+        assert direct.wait(5) == 0
+        c.close(); cases.remove(c)
+        print("SUPERVISOR_SHELL_DIR relative operand resolved and cleaned", str(tree))
 
         c = case("detached-survives")
         c.start()

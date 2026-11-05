@@ -130,6 +130,10 @@ nonempty daemon override or removed when the daemon's override is unset/empty;
 the unset property must have D-Bus type `as`. Both launch paths
 check the shell override seen by the launched process and the supervisor's
 actual shell operand, including unset/empty compiled fallback without `/usr`.
+Relative `.` and paths containing `..` are resolved against the daemon's cwd
+once, then reach both child launch paths as the same absolute, cleaned path.
+The relative-bundle print-config probe observes its distinct timeout, and a
+direct supervisor caller also checks relative operand normalization.
 Daemon termination must leave the independent
 lock alive. Each policy switch and compositor-disconnect exit are covered.
 Private runtime sockets use a shared short namespace under `TMPDIR`, with
