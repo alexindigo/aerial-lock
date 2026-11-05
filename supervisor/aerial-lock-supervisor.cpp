@@ -63,6 +63,7 @@
 #include <wayland-client.h>
 
 #include "../native/session-identity.h"
+#include "../native/shell-dir.h"
 
 #ifndef AERIAL_LOCK_DEFAULT_SHELL
 #define AERIAL_LOCK_DEFAULT_SHELL "/usr/share/aerial-lock"
@@ -250,9 +251,7 @@ private:
         // the supervisor IS the aerial-lock launcher: it runs the locker
         // payload directly, so a bare `aerial-lock` invocation works both
         // before and after `make install`.
-        const char *shell = getenv("AERIAL_LOCK_SHELL");
-        return QString::fromLatin1(shell && *shell ? shell
-                                                   : AERIAL_LOCK_DEFAULT_SHELL);
+        return shellDir(QStringLiteral(AERIAL_LOCK_DEFAULT_SHELL));
     }
 
     void launch()

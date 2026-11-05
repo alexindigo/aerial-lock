@@ -100,6 +100,9 @@ target_link_libraries(idle-bus-fixture PRIVATE Qt6::Core Qt6::DBus)
 add_test(NAME idle-config
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-idle-config.py"
             "${AERIAL_LOCK_SOURCE}/idle/aerial-idle" "${QMLTESTRUNNER}")
+add_test(NAME idle-shell-dir
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-idle-shell-dir.py"
+            "${AERIAL_LOCK_SOURCE}")
 add_test(NAME idle-logind
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-idle-logind.py"
             "${AERIAL_LOCK_SOURCE}/idle/aerial-idle"

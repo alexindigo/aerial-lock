@@ -76,6 +76,8 @@ public:
             close(fds[1]);
         } else if (method == "StartTransientUnit") {
             QJsonObject properties;
+            QList<QProcess *> pending;
+            QProcessEnvironment environment;
             const auto entries = qvariant_cast<QDBusArgument>(args.value(2));
             entries.beginArray();
             while (!entries.atEnd()) {
@@ -94,21 +96,31 @@ public:
                         list.append(QJsonObject{{"path", path}, {"argv", QJsonArray::fromStringList(argv)}, {"ignore", ignore}});
                         auto *process = new QProcess(this);
                         process->setChildProcessModifier([] { setsid(); });
-                        process->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
                         process->setProgram(path);
                         process->setArguments(argv.mid(1));
                         process->setStandardOutputFile(qEnvironmentVariable("IDLE_CASE") + "/unit-lock.log", QIODevice::Append);
                         process->setStandardErrorFile(qEnvironmentVariable("IDLE_CASE") + "/unit-lock.log", QIODevice::Append);
-                        process->start();
-                        children.append(process);
+                        pending.append(process);
                     }
                     execs.endArray();
                     properties[key] = list;
                 } else if (key == "Environment") {
-                    properties[key] = QJsonArray::fromStringList(qdbus_cast<QStringList>(value.variant()));
+                    const auto values = qdbus_cast<QStringList>(value.variant());
+                    properties[key] = QJsonArray::fromStringList(values);
+                    for (const auto &entry : values) {
+                        const auto separator = entry.indexOf('=');
+                        if (separator > 0) environment.insert(entry.left(separator), entry.mid(separator + 1));
+                    }
                 } else properties[key] = value.variant().toString();
             }
             entries.endArray();
+            // Parse every property before starting: ExecStart may precede
+            // Environment, and the caller's environment is not the manager's.
+            for (auto *process : pending) {
+                process->setProcessEnvironment(environment);
+                process->start();
+                children.append(process);
+            }
             recordEvent({{"event", "unit"}, {"signature", msg.signature()}, {"name", args.value(0).toString()},
                    {"mode", args.value(1).toString()}, {"properties", properties},
                    {"auxSignature", qvariant_cast<QDBusArgument>(args.value(3)).currentSignature()}});

@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="idle-config-") as directory:
         if not fixture.get("missing"):
             (config / "config.json").write_text(json.dumps(fixture["user"]))
         env = dict(os.environ, XDG_CONFIG_HOME=str(config.parent), QT_QPA_PLATFORM="offscreen",
-                   QT_FORCE_STDERR_LOGGING="1", LC_ALL="C.UTF-8")
+                   QT_FORCE_STDERR_LOGGING="1", LC_ALL="C.UTF-8", AERIAL_LOCK_SHELL=str(source))
         native = subprocess.run([str(binary), "--print-config"], env=env,
                                 capture_output=True, text=True, timeout=10)
         assert native.returncode == 0, (fixture["name"], native.stdout, native.stderr)

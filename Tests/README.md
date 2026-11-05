@@ -112,12 +112,22 @@ the exact command and one-warning policy at the inactive transport boundary.
 `idle-config` compares the native reader's `--print-config` output with the
 actual ConfigStore merge/schema methods in QML for shared fixtures: missing,
 partial, full and invalid objects/fields, extra keys and timeout bounds.
+Both idle fixtures set `AERIAL_LOCK_SHELL` to the source tree, so no installed
+`/usr/share/aerial-lock` is needed. This variable selects both the supervisor's
+shell directory and aerial-idle's bundled `Config/defaults.json`; unset or empty
+uses the compiled `DATADIR`. `idle-shell-dir` builds with a private compiled
+bundle, observes a different timeout from a scratch shell override, checks unset
+and empty fallback, reads the source bundle and rejects an unavailable override.
 `idle-logind` uses private system/session buses, fake login1/systemd peers and
 the real supervisor with a stub runner. It checks lock deduplication, unlock
 forwarding, real inhibitor-FD lifetime through confirmation/deadline/resume,
 login1 replacement (including replacement without an old resume and failed
 state snapshots), bypass-started locks, typed transient-unit arguments and
-detached process ancestry. Daemon termination must leave the independent
+detached process ancestry. The fake systemd starts each child with exactly the
+unit's `Environment` property, after parsing all properties. Both launch paths
+check the shell override seen by the launched process and the supervisor's
+actual shell operand, including unset/empty compiled fallback without `/usr`.
+Daemon termination must leave the independent
 lock alive. Each policy switch and compositor-disconnect exit are covered.
 Private runtime sockets use a shared short namespace under `TMPDIR`, with
 encoded-path length preflight before launching a fixture.

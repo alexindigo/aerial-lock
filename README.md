@@ -207,6 +207,12 @@ make DEBUG_DISMISS=0 DEBUG_VERBOSE=0
 bash Scripts/dev/run.sh
 ```
 
+`AERIAL_LOCK_SHELL` selects the shell directory for `aerial-lock` and the bundled
+`Config/defaults.json` read by `aerial-idle`. Set it to the source tree for both
+processes when testing a development bundle. Unset or empty, it uses the compiled
+`DATADIR` (normally `/usr/share/aerial-lock`). A nonempty value is also passed to
+locks started by aerial-idle, including transient systemd units.
+
 Before `make install` is run, `/etc/pam.d/aerial-lock` won't exist yet.
 Use the env-var override to test with your system's login PAM stack:
 
@@ -284,6 +290,7 @@ full `sources` reference, the resolution rules, and migration from the old
 | Variable                    | Overrides      | Purpose                        |
 |-----------------------------|----------------|--------------------------------|
 | `AERIAL_LOCK_PAM_SERVICE`   | `pamService`   | Dev testing without installing PAM file |
+| `AERIAL_LOCK_SHELL` | Shell/bundle directory | Shared by the supervisor and aerial-idle; unset or empty uses compiled `DATADIR` |
 
 ## Compositor support
 

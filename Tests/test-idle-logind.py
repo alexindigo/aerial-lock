@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import select
+import shutil
 import signal
 import socket
 import subprocess
@@ -17,6 +18,7 @@ import time
 from private_runtime import PrivateRuntime
 
 binary, supervisor, peer = (Path(p).resolve(strict=True) for p in sys.argv[1:4])
+source = Path(__file__).resolve().parent.parent
 
 
 def wait_for(predicate, message, timeout=8):
@@ -29,9 +31,11 @@ def wait_for(predicate, message, timeout=8):
 
 
 class Case:
-    def __init__(self, root, name, settings=None, display_fallback=False):
+    def __init__(self, root, name, settings=None, display_fallback=False,
+                 shell=str(source), idle_binary=binary, lock_supervisor=supervisor):
         self.root = root / name
         self.root.mkdir()
+        self.binary = idle_binary
         self.processes, self.buses, self.logs = [], [], []
         self.events, self.buffer = [], b""
         self.runtime_directory = PrivateRuntime("wayland", "session", "system")
@@ -43,21 +47,25 @@ class Case:
         self.config.mkdir(parents=True)
         (self.config / "config.json").write_text(json.dumps({"idle": settings or {}}))
         self.launcher = self.root / "aerial-lock"
+        self.runner = self.root / "runner"
         self.launcher.write_text('''#!/usr/bin/python3
 import json, os
 from pathlib import Path
-p = Path(os.environ["IDLE_CASE"])
+p = Path(''' + repr(str(self.root)) + ''')
 with (p / "launches").open("a") as f:
-    f.write(json.dumps(dict(pid=os.getpid(), ppid=os.getppid(), sid=os.getsid(0))) + "\\n")
-os.execv(os.environ["IDLE_SUPERVISOR"], [os.environ["IDLE_SUPERVISOR"]])
+    f.write(json.dumps(dict(pid=os.getpid(), ppid=os.getppid(), sid=os.getsid(0),
+                           shell=os.environ.get("AERIAL_LOCK_SHELL"),
+                           managerSentinel=os.environ.get("IDLE_MANAGER_SENTINEL"))) + "\\n")
+os.execve(''' + repr(str(lock_supervisor)) + ''', [''' + repr(str(lock_supervisor)) + '''],
+          dict(os.environ, AERIAL_LOCK_RUNNER=''' + repr(str(self.runner)) + '''))
 ''')
         self.launcher.chmod(0o700)
-        self.runner = self.root / "runner"
         self.runner.write_text('''#!/usr/bin/python3
-import os, socket, time
+import json, os, socket, sys, time
 from pathlib import Path
-p = Path(os.environ["IDLE_CASE"])
+p = Path(''' + repr(str(self.root)) + ''')
 with (p / "runners").open("a") as f: f.write(str(os.getpid()) + "\\n")
+(p / "runner-args").write_text(json.dumps(sys.argv[1:]))
 report = None
 while not (p / "stop").exists():
     if report is None and (p / "engage").exists():
@@ -75,17 +83,20 @@ while not (p / "stop").exists():
 ''')
         self.runner.chmod(0o700)
         env = {k: v for k, v in os.environ.items() if k not in
-               ("HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_SOCKET", "XDG_SESSION_ID")}
+               ("HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_SOCKET", "XDG_SESSION_ID", "AERIAL_LOCK_SHELL")}
         env.update(DBUS_SESSION_BUS_ADDRESS=self.bus("session"), DBUS_SYSTEM_BUS_ADDRESS=self.bus("system"),
                    QT_FORCE_STDERR_LOGGING="1", LC_ALL="C.UTF-8",
                    XDG_RUNTIME_DIR=str(self.runtime), WAYLAND_DISPLAY="wayland", XDG_CONFIG_HOME=str(self.config.parent),
-                   IDLE_CASE=str(self.root), IDLE_SUPERVISOR=str(supervisor), AERIAL_IDLE_LOCK_COMMAND=str(self.launcher),
-                   AERIAL_LOCK_RUNNER=str(self.runner), AERIAL_LOCK_SHELL=str(self.root))
+                   IDLE_CASE=str(self.root), AERIAL_IDLE_LOCK_COMMAND=str(self.launcher),
+                   AERIAL_LOCK_RUNNER=str(self.runner))
+        if shell is not None:
+            env["AERIAL_LOCK_SHELL"] = shell
         if not display_fallback:
             env["XDG_SESSION_ID"] = "test-session"
         self.env = env
         self.service = "org.aeriallock.Supervisor.s" + hashlib.sha256(str(self.runtime / "wayland").encode()).hexdigest()[:32]
-        self.fake = subprocess.Popen([str(peer)], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        self.fake = subprocess.Popen([str(peer)], env=dict(env, IDLE_MANAGER_SENTINEL="must-not-leak"),
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=self.log("fake.stderr"))
         self.processes.append(self.fake)
         self.await_event("ready")
@@ -131,7 +142,7 @@ while not (p / "stop").exists():
         wait_for(lambda: (self.pump() or sum(e.get("op") == op for e in self.events) > count), "ack " + op)
 
     def start(self, inhibitor=True, session=True):
-        self.idle = subprocess.Popen([str(binary)], env=self.env, stdout=self.log("idle.stdout"),
+        self.idle = subprocess.Popen([str(self.binary)], env=self.env, stdout=self.log("idle.stdout"),
                                      stderr=self.log("idle.stderr"))
         self.processes.append(self.idle)
         if inhibitor:
@@ -388,10 +399,14 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
         assert unit["name"].startswith(f"aerial-lock-{c.idle.pid}-") and unit["name"].endswith(".service")
         assert unit["mode"] == "fail"
         props = unit["properties"]
+        wait_for(lambda: len(c.launches()) == 1, "transient unit starts lock")
+        assert c.launches()[0]["shell"] == c.env["AERIAL_LOCK_SHELL"], c.launches()
+        assert c.launches()[0]["managerSentinel"] is None, c.launches()
         assert props["ExecStart"] == [{"path": str(c.launcher), "argv": [str(c.launcher)], "ignore": False}]
         assert props["CollectMode"] == "inactive-or-failed" and props["Description"]
         expected = [f"{key}={c.env[key]}" for key in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_ID",
-                    "HYPRLAND_INSTANCE_SIGNATURE", "NIRI_SOCKET", "DBUS_SESSION_BUS_ADDRESS") if key in c.env]
+                     "HYPRLAND_INSTANCE_SIGNATURE", "NIRI_SOCKET", "DBUS_SESSION_BUS_ADDRESS") if key in c.env]
+        expected.append("AERIAL_LOCK_SHELL=" + c.env["AERIAL_LOCK_SHELL"])
         assert props["Environment"] == expected
         c.locked()
         c.no_children()
@@ -403,6 +418,36 @@ with tempfile.TemporaryDirectory(prefix="idle-logind-") as directory:
         c.release(via_idle=False)
         c.close(); cases.remove(c)
         print("T4(i) typed transient unit, expected environment and actual independent process relationship")
+
+        # A private compiled bundle lets unset/empty cases run without /usr.
+        tree = root / "compiled-source"
+        shutil.copytree(source, tree, ignore=shutil.ignore_patterns(".git", "build", "__pycache__", "*.so"))
+        for targets in (("clean",), ("idle/aerial-idle", "supervisor/aerial-lock-supervisor")):
+            result = subprocess.run(["make", "-C", str(tree), "DATADIR=" + str(source), *targets],
+                                    capture_output=True, text=True, timeout=120)
+            assert result.returncode == 0, result.stdout + result.stderr
+        for systemd in (False, True):
+            for label, shell in (("set", str(source)), ("unset", None), ("empty", "")):
+                name = ("systemd-" if systemd else "detached-") + label
+                c = case(name, shell=shell, idle_binary=tree / "idle/aerial-idle",
+                         lock_supervisor=tree / "supervisor/aerial-lock-supervisor")
+                if systemd:
+                    c.send("systemd", value=True)
+                c.start()
+                c.send("lock")
+                c.locked()
+                launch = c.launches()[0]
+                expected_shell = shell if shell or not systemd else None
+                assert launch["shell"] == expected_shell, (name, launch)
+                assert launch["managerSentinel"] is None, (name, launch)
+                assert json.loads((c.root / "runner-args").read_text())[:2] == ["--shell-dir", str(source)]
+                if systemd:
+                    entries = c.await_event("unit")["properties"]["Environment"]
+                    assert [entry for entry in entries if entry.startswith("AERIAL_LOCK_SHELL=")] == (
+                        ["AERIAL_LOCK_SHELL=" + shell] if shell else []), entries
+                c.release()
+                c.close(); cases.remove(c)
+                print("IDLE_SHELL_PROPAGATION", name, "launcher shell", repr(expected_shell), "runner shell", str(source))
 
         c = case("detached-survives")
         c.start()

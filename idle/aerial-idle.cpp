@@ -29,6 +29,7 @@
 #include <wayland-client.h>
 #include "ext-idle-notify-v1-client.h"
 #include "../native/session-identity.h"
+#include "../native/shell-dir.h"
 
 #ifndef AERIAL_IDLE_DATADIR
 #define AERIAL_IDLE_DATADIR "/usr/share/aerial-lock"
@@ -97,7 +98,7 @@ static bool validTimeout(const QJsonValue &value)
 static bool loadConfig(QJsonObject &idle)
 {
     QJsonObject defaults;
-    if (!readObject(QStringLiteral(AERIAL_IDLE_DATADIR "/Config/defaults.json"), defaults, true))
+    if (!readObject(shellDir(QStringLiteral(AERIAL_IDLE_DATADIR)) + QStringLiteral("/Config/defaults.json"), defaults, true))
         return false;
     const auto baseline = defaults.value("idle").toObject();
     if (!validTimeout(baseline.value("timeoutSeconds"))
@@ -244,6 +245,8 @@ private:
             if (qEnvironmentVariableIsSet(key))
                 environment << QString::fromLatin1(key) + '=' + qEnvironmentVariable(key);
         }
+        const QString shell = qEnvironmentVariable("AERIAL_LOCK_SHELL");
+        if (!shell.isEmpty()) environment << QStringLiteral("AERIAL_LOCK_SHELL=") + shell;
         UnitProperties properties {
             {QStringLiteral("ExecStart"), QDBusVariant(QVariant::fromValue(UnitExecs{{path, {path}, false}}))},
             {QStringLiteral("Environment"), QDBusVariant(environment)},
