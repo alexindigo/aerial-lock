@@ -29,6 +29,15 @@ Item {
     readonly property bool usingFallback: !internal.useTheme
     readonly property bool settled: internal.settled
     readonly property var preferredTopics: internal.topics
+    // A custom theme may implement its own conforming writer rather than
+    // AuthField. Surface activation selects that theme writer as well.
+    property bool windowActive: Window.active
+    onWindowActiveChanged: {
+        if (windowActive && root.visible && root.enabled) {
+            root.context.auth.input.transferFocus(root.context.auth.input.themeWriter)
+            Qt.callLater(root.focusInput)
+        }
+    }
 
     // QObject ownership stays with Lock's Scope; only visual attachment moves.
     // Clear the old backdrop before crossing windows, including equal geometry.
@@ -297,6 +306,8 @@ Item {
     function focusInput() {
         if (!root.visible || !root.enabled)
             return
+        if (root.windowActive)
+            root.context.auth.input.transferFocus(root.context.auth.input.themeWriter)
         if (!internal.useTheme) {
             fallbackPanel.focusInput()
             return

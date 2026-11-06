@@ -53,6 +53,12 @@ QtObject {
 
     // ---- Writer registration / authority (data-only tokens; no Items) ----
     property int activeWriter: -1
+    // Panel/editor lifetime is independent of the compositor-selected writer.
+    // Only theme writers participate in elective theme promotion.
+    property int themeWriter: -1
+    property int focusedWriter: -1
+    property var _writers: ({})
+    property bool _handoffHadFocus: false
     property int generation: 0
     // "" (idle) | "releasing" (outgoing editor flushes when safe) |
     // "awaitingClaim" (incoming editor may claim)
@@ -62,6 +68,8 @@ QtObject {
 
     signal handoffCompleted()
     signal handoffAborted()
+    signal focusFlushRequested()
+    signal focusTransferRequested(int writer)
 
     // ---- Activity bookkeeping (reported by the active core) ----
     // Handoff readiness reflects live composition/gesture state, NOT a
@@ -97,13 +105,44 @@ QtObject {
 
     // ---- Editor-facing operations (active writer only) ----
 
-    function registerWriter() {
-        return _nextToken++
+    function registerWriter(themeEditor) {
+        var token = _nextToken++
+        _writers[token] = themeEditor !== false
+        return token
+    }
+
+    function unregisterWriter(token) {
+        delete _writers[token]
+        if (focusedWriter === token)
+            focusedWriter = -1
+        releaseWriter(token)
+    }
+
+    // Called only for compositor window activation, never pointer motion or
+    // item focus. Qt's old-window focus-out precedes new-window activation.
+    // Finish the old editor's normal focus-out path and transfer immediately;
+    // elective theme replacement remains a separate, deferrable transaction.
+    function transferFocus(token) {
+        if (!_writers.hasOwnProperty(token))
+            return
+        focusedWriter = token
+        if (activeWriter === token)
+            return
+        focusTransferRequested(activeWriter)
+        focusFlushRequested()
+        compositionActive = false
+        gestureActive = false
+        activeWriter = token
+        generation++
     }
 
     // Normal activation: the visible, enabled editor claims an idle model.
     function claimWriter(token) {
-        if (activeWriter !== -1 || handoffState !== "")
+        if (handoffState !== "" || _writers[token] !== true)
+            return false
+        if (themeWriter === -1)
+            themeWriter = token
+        if (activeWriter !== -1 || themeWriter !== token)
             return false
         activeWriter = token
         generation++
@@ -193,28 +232,39 @@ QtObject {
     function requestHandoff() {
         if (handoffState !== "")
             return
-        handoffState = activeWriter === -1 ? "awaitingClaim" : "releasing"
+        _handoffHadFocus = themeWriter !== -1 && (activeWriter === themeWriter || focusedWriter === themeWriter)
+        handoffState = themeWriter === -1 ? "awaitingClaim" : "releasing"
     }
 
     // The active core releases after its final synchronous flush, only when
     // no native composition or edit gesture is live.
     function releaseWriter(token) {
-        if (token !== activeWriter)
+        if (token !== activeWriter && token !== themeWriter)
             return false
-        activeWriter = -1
-        compositionActive = false
-        gestureActive = false
+        var outgoingTheme = token === themeWriter
+        if (outgoingTheme)
+            themeWriter = -1
+        if (token === activeWriter) {
+            activeWriter = -1
+            compositionActive = false
+            gestureActive = false
+        }
         generation++
-        if (handoffState === "releasing")
+        if (outgoingTheme && handoffState === "releasing")
             handoffState = "awaitingClaim"
         return true
     }
 
     // The incoming editor claims during a handoff (before it is visible).
     function claimHandoff(token) {
-        if (handoffState !== "awaitingClaim")
+        if (handoffState !== "awaitingClaim" || _writers[token] !== true)
             return false
-        activeWriter = token
+        themeWriter = token
+        if (activeWriter === -1)
+            activeWriter = token
+        if (_handoffHadFocus && (focusedWriter === -1 || !_writers.hasOwnProperty(focusedWriter)
+                || _writers[focusedWriter] === true))
+            focusedWriter = token
         handoffState = ""
         generation++
         handoffCompleted()

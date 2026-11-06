@@ -19,6 +19,7 @@
 #include <QTest>
 #include <cstdio>
 #include <memory>
+#include "../native/surface-input.h"
 
 static QObject *rootObj = nullptr;
 static QQuickWindow *viewPtr = nullptr;
@@ -124,11 +125,13 @@ static void keyDirect(QEvent::Type type, int key, const QString &text, bool auto
 
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
+    SurfaceInputFilter inputFilter;
     const bool migration = argc > 1 && QString::fromUtf8(argv[1]) == QStringLiteral("--migration");
     QQmlEngine engine;
     QObject scopeOwner;
     std::unique_ptr<QQmlComponent> persistentComponent;
     auto view = std::make_unique<QQuickView>(&engine, nullptr);
+    view->setObjectName(SurfaceInputFilter::windowName());
     viewPtr = view.get();
     const int pathIndex = migration ? 2 : 1;
     const QUrl source = QUrl::fromLocalFile(
@@ -435,6 +438,86 @@ int main(int argc, char **argv) {
         expect(st["active"].toInt() == before["active"].toInt(),
                "p6: writer authority unchanged by styling");
         expect(st["windowOpen"].toBool() == false, "p6: tuning progress advanced normally");
+    }
+
+    // Characterize the normal focus-out ordering: the old input method commits
+    // before new-window activation. Authority must then transfer synchronously,
+    // before the first key, with no queued event transport in product code.
+    call("newRig", 0, 0);
+    clicks("pre");
+    ime(QStringLiteral("n"), QString());
+    QObject *outgoing = focusInput();
+    const int beforeCommitRevision = state()["rev"].toInt();
+    ime(QString(), QString::fromUtf8("\xE3\x81\xAB"));
+    expect(state()["rev"].toInt() == beforeCommitRevision + 1,
+           "surfaces: focus-out composition commits exactly once before focus-in");
+    {
+        QQuickWindow other;
+        other.setObjectName(SurfaceInputFilter::windowName());
+        other.resize(640, 480);
+        call("newSink", QVariant::fromValue(other.contentItem()));
+        expect(QGuiApplication::focusWindow() == view.get(),
+               "surfaces: preparing inactive sink does not activate its window");
+        expect(state()["active"].toInt() == state()["aToken"].toInt(),
+               "surfaces: preparing local focus does not steal edit authority");
+        other.contentItem()->setFocus(true);
+        other.show();
+        // Reproduce the Wayland ordering: a key delivered to the new window
+        // before its activation notification must still reach the sole draft.
+        QTest::keyClick(&other, Qt::Key_X);
+        other.requestActivate();
+        (void)QTest::qWaitForWindowActive(&other, 2000);
+        settle();
+        expectStr(state()["text"].toString(), QString::fromUtf8("pre\xE3\x81\xAB" "x"),
+                  "surfaces: pre-activation key retained exactly once after focus-in");
+        auto before = state();
+        expect(before["active"].toInt() != before["aToken"].toInt(),
+               "surfaces: focus-in transfers authority immediately");
+        expect(!outgoing->property("inputMethodComposing").toBool(),
+               "surfaces: old normal composition ended before focus-in");
+        viewPtr = &other;
+        clicks("bc");
+        QTest::keyClick(viewPtr, Qt::Key_Left, Qt::ShiftModifier);
+        QTest::keyClick(viewPtr, Qt::Key_Backspace);
+        QTest::keyClick(viewPtr, Qt::Key_Return);
+        settle();
+        auto after = state();
+        expect(after["submits"].toInt() == 1, "surfaces: immediate Return submits exactly once");
+        expect(after["accepted"].toArray().size() == 1
+               && after["accepted"].toArray().first().toString() == QString::fromUtf8("pre\xE3\x81\xAB" "xb"),
+               "surfaces: native composition commit and first incoming keys delivered exactly once");
+        expectStr(outgoing->property("text").toString(), "", "surfaces: inactive panel mirror consumed");
+        viewPtr = view.get();
+    }
+
+    view->requestActivate();
+    (void)QTest::qWaitForWindowActive(view.get(), 2000);
+    call("newRig", 0, 0);
+    clicks("pre");
+    ime(QStringLiteral("n"), QString());
+    outgoing = focusInput();
+    ime(QString(), QString::fromUtf8("\xE3\x81\xAB"));
+    {
+        QQuickWindow other;
+        other.setObjectName(SurfaceInputFilter::windowName());
+        other.resize(640, 480);
+        call("newSink", QVariant::fromValue(other.contentItem()));
+        other.show();
+        other.requestActivate();
+        (void)QTest::qWaitForWindowActive(&other, 2000);
+        settle();
+        viewPtr = &other;
+        ime(QStringLiteral("k"), QString());
+        ime(QString(), QStringLiteral("z"));
+        clicks("q");
+        QTest::keyClick(viewPtr, Qt::Key_Return);
+        settle();
+        auto after = state();
+        expect(after["submits"].toInt() == 1, "surfaces: new-surface IME sequence reaches submission");
+        expect(after["accepted"].toArray().size() == 1
+               && after["accepted"].toArray().first().toString() == QString::fromUtf8("pre\xE3\x81\xAB" "zq"),
+               "surfaces: new preedit/commit remain usable after the transfer");
+        viewPtr = view.get();
     }
 
     printf("%s: %d failure(s)\n", failures == 0 ? "ALL OK" : "FAILURES", failures);

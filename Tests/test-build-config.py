@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-build-config-") as d, PrivateRun
     assert {p.name for p in objects} == {
         "aerial-unlock-main.o", "aerial-unlock-proto.o",
         "aerial-supervisor-main.o", "aerial-supervisor-proto.o",
-        "aerial-idle-main.o", "aerial-idle-proto.o", "connection-guard.o"
+        "aerial-idle-main.o", "aerial-idle-proto.o", "connection-guard.o", "surface-input.o"
     }, objects
     before = [p.stat().st_mtime_ns for p in objects]
     make(b, "install", "PAMDIR=" + str(root / "pam"))

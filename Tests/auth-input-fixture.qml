@@ -15,6 +15,19 @@ Item {
 
     property var rig: null
     property string outState: ""
+    property var sink: null
+
+    Component {
+        id: sinkComponent
+        LockModule.AuthInputSink {
+            input: root.rig.context.auth.input
+            inputBusy: root.rig.context.auth.inProgress
+            responseVisible: root.rig.context.auth.responseVisible
+            maxResponseSize: root.rig.context.auth.maxResponseSize
+            onSubmitRequested: root.rig.context.auth.submit()
+        }
+    }
+    function newSink(attachment) { sink = sinkComponent.createObject(attachment) }
 
     Component {
         id: rigComponent

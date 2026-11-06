@@ -40,3 +40,4 @@ idle/aerial-idle
 idle/aerial-idle.moc
 idle/ext-idle-notify-v1-client.h
 idle/ext-idle-notify-v1-protocol.c
+native/surface-input.moc

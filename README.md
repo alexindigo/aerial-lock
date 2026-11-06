@@ -31,10 +31,10 @@ With an empty
 frame decodes. The `aerial-lock-fetch` pack downloader (optional) needs
 `curl`, `python3`, and `tar`.
 
-Building requires a C/C++ compiler, Make, pkg-config, Qt6 Core/Gui/DBus
+Building requires a C/C++ compiler, Make, pkg-config, Qt6 Core/Gui/DBus/Quick
 development files, PAM headers, wayland-client and wayland-protocols (including
 `wayland-scanner`). On Arch these are provided by `base-devel`, `qt6-base`,
-`pam`, `wayland` and `wayland-protocols`; Git is needed to build from a clone.
+`qt6-declarative`, `pam`, `wayland` and `wayland-protocols`; Git is needed to build from a clone.
 
 With the default `PREFIX=/usr`, installation includes `aerial-lock`,
 `aerial-lock-supervisor`, `aerial-unlock`, `aerial-lock-fetch` and `aerial-idle`
@@ -55,6 +55,8 @@ make PAM_MAX_RESP_SIZE=1024
 ```
 
 ## Usage
+
+Type and submit on any locked output; all surfaces share one draft and the panel stays pinned to its selected output.
 
 The installed supervisor launches the shared guarded runner on every attempt,
 including solid-background/no-video locks. Its private Qt generic plugin watches

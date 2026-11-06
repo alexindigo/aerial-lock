@@ -30,10 +30,11 @@ SUPERVISOR_OBJS := $(OBJDIR)/aerial-supervisor-proto.o $(OBJDIR)/aerial-supervis
 GUARD_OBJS := $(OBJDIR)/connection-guard.o
 IDLE_OBJS := $(OBJDIR)/aerial-idle-main.o $(OBJDIR)/aerial-idle-proto.o
 GUARD_PLUGIN := native/qt-plugins/generic/libAerialLockConnectionGuard.so
+INPUT_PLUGIN := native/qt-plugins/generic/libAerialLockSurfaceInput.so
 
 .PHONY: all install uninstall dev clean pam-limits build-flags force-native-config
 
-all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor idle/aerial-idle $(GUARD_PLUGIN)
+all: pam-limits build-flags recovery/aerial-unlock supervisor/aerial-lock-supervisor idle/aerial-idle $(GUARD_PLUGIN) $(INPUT_PLUGIN)
 
 # Make cannot see variable changes in a command line. One content-stable
 # prerequisite records the effective native configuration, so an incremental
@@ -144,6 +145,16 @@ supervisor/aerial-lock-supervisor: $(SUPERVISOR_OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_PIC_FLAGS) -o $@ $(OBJDIR)/aerial-supervisor-main.o $(OBJDIR)/aerial-supervisor-proto.o \
 		$$(pkg-config --libs Qt6Core Qt6DBus wayland-client)
 
+native/surface-input.moc: native/surface-input.cpp native/surface-input.h native/surface-input.json
+	/usr/lib/qt6/moc $$(pkg-config --cflags Qt6Quick) $< -o $@
+
+$(OBJDIR)/surface-input.o: native/surface-input.cpp native/surface-input.h native/surface-input.moc $(OBJDIR)/native-config
+	$(CXX) -std=c++17 $(CPPFLAGS) $(CXXFLAGS) $(QT_PIC_FLAGS) -c $< $$(pkg-config --cflags Qt6Quick) -o $@
+
+$(INPUT_PLUGIN): $(OBJDIR)/surface-input.o
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(QT_PIC_FLAGS) -shared -o $@ $< $$(pkg-config --libs Qt6Quick) -ldl
+
 idle/ext-idle-notify-v1-client.h: $(IDLE_NOTIFY_XML)
 	wayland-scanner client-header $< $@
 
@@ -180,6 +191,7 @@ install: all
 	install -m 644 Modules/Lock/AccentTone.js $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/ThemeHost.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/AuthField.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
+	install -m 644 Modules/Lock/AuthEditor.qml Modules/Lock/AuthInputSink.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/Avatar.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -m 644 Modules/Lock/FrostedText.qml $(DESTDIR)$(DATADIR)/Modules/Lock/
 	install -d $(DESTDIR)$(DATADIR)/Themes
@@ -233,6 +245,7 @@ install: all
 	install -d $(DESTDIR)$(LIBEXECDIR) $(DESTDIR)$(PLUGINROOT)/generic
 	install -m 755 Scripts/aerial-lock-run $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run
 	install -m 755 $(GUARD_PLUGIN) $(DESTDIR)$(PLUGINROOT)/generic/
+	install -m 755 $(INPUT_PLUGIN) $(DESTDIR)$(PLUGINROOT)/generic/
 	install -d $(DESTDIR)$(PAMDIR)
 	install -m 644 pam.d/aerial-lock $(DESTDIR)$(PAMDIR)/aerial-lock
 
@@ -244,6 +257,7 @@ uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/aerial-lock-supervisor
 	rm -f $(DESTDIR)$(BINDIR)/aerial-idle $(DESTDIR)$(PREFIX)/lib/systemd/user/aerial-idle.service
 	rm -f $(DESTDIR)$(LIBEXECDIR)/aerial-lock-run $(DESTDIR)$(PLUGINROOT)/generic/libAerialLockConnectionGuard.so
+	rm -f $(DESTDIR)$(PLUGINROOT)/generic/libAerialLockSurfaceInput.so
 	rm -f $(DESTDIR)$(PAMDIR)/aerial-lock
 
 clean:
@@ -251,6 +265,7 @@ clean:
 	rm -f recovery/aerial-unlock recovery/ext-session-lock-v1-client.h recovery/ext-session-lock-v1-protocol.c
 	rm -f supervisor/aerial-lock-supervisor supervisor/aerial-lock-supervisor.moc supervisor/ext-session-lock-v1-client.h supervisor/ext-session-lock-v1-protocol.c
 	rm -f native/connection-guard.moc $(GUARD_PLUGIN)
+	rm -f native/surface-input.moc $(INPUT_PLUGIN) $(OBJDIR)/surface-input.o
 	rm -f idle/aerial-idle idle/aerial-idle.moc idle/ext-idle-notify-v1-client.h idle/ext-idle-notify-v1-protocol.c
 	rm -f $(UNLOCK_OBJS) $(SUPERVISOR_OBJS) $(GUARD_OBJS) $(IDLE_OBJS)
 	rm -f $(OBJDIR)/native-config $(OBJDIR)/native-config.tmp $(OBJDIR)/aerial-idle.service

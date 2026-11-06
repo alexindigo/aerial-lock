@@ -141,6 +141,11 @@ encoded-path length preflight before launching a fixture.
 
 ## Real-session integration drivers
 
+Stock wtype 0.4 writes its keymap to a hardcoded shared temporary path, ignoring
+`TMPDIR`. For disk-backed-only guest testing, put a workspace-local build with
+the TMPDIR-only tempfile patch first in `PATH`; preserve its source, patch and
+binary hash with the operator evidence. No system wtype replacement is needed.
+
 `run-remediation.sh` (→ `remediation-driver.py`), `launch-integration.py` and
 `nested-launch-integration.py` run real locks with real PAM inside owned nested
 compositors (or a recorded native DRM session) of a disposable test VM. They
@@ -206,6 +211,24 @@ confirmation; beside each failed start it must exit 4. `--stage` can select a se
 install prefix inside the workspace. `nested-launch-integration.py` checks the
 development template with `--backend niri --vm-key` (emulated guest keyboard)
 or `--backend hyprland --ipc-control` (compositor spawn path, not native keys).
+
+`surface-input-integration.py --root "$ROOT" --vm-record "$VM_RECORD" --case <case>`
+requires a recorded native niri DRM session with two mapped outputs. Niri's
+nested winit backend has only one output and cannot reproduce output hotplug.
+Run each of `non-panel`, `hotplug`, `fast` and `compose`. These cover ordinary
+non-panel input, output removal/re-addition, native typing across at least ten
+focus transfers and stock Fcitx inline dead-key composition at focus-out. The
+inline engine avoids the documented unsupported CJK candidate-popup path. Each case observes
+the pinned panel's exact synthetic draft before stopping diagnostics, then real
+PAM unlock on the non-panel surface, natural exit 0 and desktop input. The QML surface
+suite covers selection, masking, consume/clear, busy/limit/tuning behavior,
+immediate first-key authority, gesture cancellation, rapid focus roundtrips and
+both theme-handoff orders; the native-input probe adds two real QQuickWindows
+and the native commit-before-focus-in ordering, including a key delivered
+before native focus-in. `surface-input-filter` separately checks scope, FIFO,
+exactly-once replay, key metadata, the 64-event/250-ms bounds, count-only logging,
+destruction cleanup and non-interception of input-method events. Real platform composition and
+fast cross-output input are exercised in the real-session driver.
 
 The staged launch driver also cold-loads a real locker for each D-Bus
 `Release()` and documented `pkill -USR1 -f '^aerial-lock-supervisor'` route:

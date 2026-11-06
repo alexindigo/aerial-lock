@@ -210,5 +210,22 @@ Item {
             compare(fallbackSpy.count, 0)
             model.abortHandoff()
         }
+        function test_custom_theme_activation_selects_its_writer() {
+            // This fixture implements the writer contract without AuthField.
+            model.setActivity(writer, true, false)
+            loadCandidate()
+            model.setActivity(writer, false, false)
+            verify(model.releaseWriter(writer))
+            verify(candidate.claim())
+            var sink = model.registerWriter(false)
+            model.transferFocus(sink)
+            compare(model.activeWriter, sink)
+            host.windowActive = false
+            host.visible = true
+            host.windowActive = true
+            tryCompare(model, "activeWriter", candidate.writerToken)
+            compare(model.text, "synthetic-draft")
+            verify(!host.usingFallback)
+        }
     }
 }

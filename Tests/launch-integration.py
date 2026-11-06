@@ -70,6 +70,7 @@ def main():
         session.owned.check_binary(runner)
         session.owned.check_binary(stage / "bin/aerial-lock-supervisor")
         session.owned.check_binary(stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockConnectionGuard.so")
+        session.owned.check_binary(stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockSurfaceInput.so")
         shim.write_text('#!/bin/bash\nset -euo pipefail\nexec '
                         + shlex.quote(str(runner)) + ' "$@" >'
                         + shlex.quote(str(fifo)) + ' 2>&1\n')
@@ -135,6 +136,7 @@ def main():
         maps = Path(f"/proc/{qs_pid}/maps").read_text()
         assert "libMpvQt" not in maps and "libmpvqml.so" not in maps
         assert str(stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockConnectionGuard.so") in maps
+        assert str(stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockSurfaceInput.so") in maps
         (session.output / "supervised-no-video-maps.txt").write_text(maps)
         environment = dict(entry.split(b"=", 1) for entry in Path(f"/proc/{qs_pid}/environ").read_bytes().split(b"\0") if b"=" in entry)
         assert environment[b"AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID"] == str(qs_pid).encode()

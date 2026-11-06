@@ -14,11 +14,12 @@ while (($#)); do
         *) printf 'aerial-lock-run: unknown argument %s\n' "$1" >&2; exit 72 ;;
     esac
 done
-if [[ ! -d "$shell_dir" || ! -d "$plugin_root" || ! -f "$plugin_root/generic/libAerialLockConnectionGuard.so" ]]; then
+if [[ ! -d "$shell_dir" || ! -d "$plugin_root" || ! -f "$plugin_root/generic/libAerialLockConnectionGuard.so" \
+    || ! -f "$plugin_root/generic/libAerialLockSurfaceInput.so" ]]; then
     printf 'aerial-lock-run: shell/plugin paths are unavailable\n' >&2
     exit 72
 fi
-unset AERIAL_LOCK_CONNECTION_GUARD_PID QT_WAYLAND_RECONNECT AERIAL_LOCK_RUNTIME_DIR
+unset AERIAL_LOCK_CONNECTION_GUARD_PID AERIAL_LOCK_SURFACE_INPUT_PID QT_WAYLAND_RECONNECT AERIAL_LOCK_RUNTIME_DIR
 # Private per-locker runtime directory for frame grabs (bounded, reused files).
 # Never a shared temporary directory. It is optional: if it cannot be prepared,
 # the locker still locks and simply does not sample accents. Each step is
@@ -44,9 +45,10 @@ if [[ "${XDG_RUNTIME_DIR:-}" == /* ]]; then
     fi
 fi
 export AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID=$$
+export AERIAL_LOCK_SURFACE_INPUT_OWNER_PID=$$
 export QT_QPA_PLATFORM=wayland QSG_RHI_BACKEND=opengl QS_DISABLE_CRASH_HANDLER=1
 export QT_PLUGIN_PATH="$plugin_root${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
-export QT_QPA_GENERIC_PLUGINS=AerialLockConnectionGuard
+export QT_QPA_GENERIC_PLUGINS=AerialLockConnectionGuard,AerialLockSurfaceInput
 qs_path=$(command -v qs 2>/dev/null || true)
 if [[ -z "$qs_path" || ! -f "$qs_path" || ! -x "$qs_path" ]]; then
     printf 'aerial-lock-run: qs is not available\n' >&2

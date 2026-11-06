@@ -444,6 +444,7 @@ class Session:
         self.assert_control()
         self.owned.check_binary(self.stage / "libexec/aerial-lock/aerial-lock-run")
         self.owned.check_binary(self.stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockConnectionGuard.so")
+        self.owned.check_binary(self.stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockSurfaceInput.so")
         env = self.env.copy()
         env["WAYLAND_DEBUG"] = "1"
         if fault:
@@ -457,6 +458,8 @@ class Session:
         maps = Path(f"/proc/{self.locker.process.pid}/maps").read_text()
         if "libMpvQt" in maps or str(self.stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockConnectionGuard.so") not in maps:
             raise RuntimeError("loaded guard/backend provenance mismatch")
+        if str(self.stage / "lib/aerial-lock/qt-plugins/generic/libAerialLockSurfaceInput.so") not in maps:
+            raise RuntimeError("surface-input plugin provenance mismatch")
         (self.output / f"maps-{cycle:03}.txt").write_text(maps)
         return secure
 

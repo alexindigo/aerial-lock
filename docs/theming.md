@@ -120,7 +120,8 @@ Shared building blocks you can import from `root:/Modules/Lock`:
   `fontLetterSpacing`, `horizontalAlignment`, `cursorDelegate` (a draw-only
   custom caret; the native editor still positions it). Behavior tunings:
   `initialSpacePolicy`, `initialSpaceScope` (see "Initial-space tunings").
-  Public methods: `submit()`, `focusField()`; `hasActiveFocus` for styling.
+   Public methods: `submit()`, `focusField()`; `hasActiveFocus` and
+   `inputMethodComposing` are read-only presentation state.
   A themed submit *button* calls `field.submit()` — the exact path Return
   takes. Never reach into its internal TextInput.
 - **`Avatar`** — local `$HOME/.face` when it loads, drawn
@@ -179,8 +180,13 @@ properties directly and never log, serialize or transmit them.
 A genuinely custom input (not recommended) must implement the same writer
 contract `AuthField` uses: register/claim a writer token, publish coherent
 edits with `applyEdit`, respect `revision`, and request submission with
-`context.auth.submit()` after synchronizing. `Modules/Lock/AuthField.qml`
-is the reference implementation.
+`context.auth.submit()` after synchronizing. `Modules/Lock/AuthEditor.qml`
+is the reference implementation (adapted to the context by `AuthField`).
+Observe `activeWriter` across surface transfers, flush the active editor on
+`focusFlushRequested`, and mirror every authoritative revision even while
+inactive. `focusTransferRequested` ends the outgoing editor's ordinary
+focus-out path before immediate authority transfer; it is separate from the
+composition-safe elective theme handoff.
 
 ### Initial-space tunings
 
@@ -294,6 +300,25 @@ surface; with none left it waits without clearing the draft or restarting
 PAM/theme/source inventory. `backdrop` is cleared before the theme crosses
 windows and then set to the new surface's scenery, so a theme must tolerate
 `backdrop` changing (or being null) during the lock.
+
+Every other lock surface has an invisible editor of the same draft. Compositor
+keyboard activation transfers sole edit authority, without moving the panel or
+using hover focus. The panel field mirrors committed text and selection while
+another surface edits. The old owner's composition ends through its ordinary
+input-method focus-out path and its pointer gesture is cancelled. Authority
+transfers immediately at compositor activation, before the first incoming key.
+This is separate from theme promotion, and sinks
+cannot claim a theme handoff. `AuthEditor` owns the common editing machinery;
+`AuthField` adapts the theme context and `AuthInputSink` takes only the draft,
+prompt properties and a submission callback.
+
+Qt can deliver the first key to a newly mapped lock window before Qt focus-in.
+A separate generic plugin retains only those pre-focus key events on marked
+lock-surface windows and replays them once through normal window delivery after
+focus-in. Its per-window FIFO holds at most 64 events for at most 250 ms; excess
+or expired events are dropped with count-only warnings and destruction clears
+the window's queue. It does not intercept input-method events or other windows,
+and owns no draft, authentication or theme policy.
 
 Fallback settlement cancels incubation and releases the failed candidate.
 Perpetual animations should follow effective visibility, including custom

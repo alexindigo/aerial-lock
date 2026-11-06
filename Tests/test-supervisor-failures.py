@@ -51,6 +51,7 @@ def run_runner(root, name, args, path_entries, runtime=None):
     plugins = case / "plugins" / "generic"
     plugins.mkdir(parents=True)
     (plugins / "libAerialLockConnectionGuard.so").write_bytes(b"")
+    (plugins / "libAerialLockSurfaceInput.so").write_bytes(b"")
     bin_dir = case / "bin"
     bin_dir.mkdir()
     for entry, content, mode in path_entries:
@@ -134,6 +135,7 @@ with tempfile.TemporaryDirectory(prefix="aerial-failures-") as directory, ExitSt
             # The real runner with valid paths, on a PATH without qs.
             (case / "plugins" / "generic").mkdir(parents=True)
             (case / "plugins" / "generic" / "libAerialLockConnectionGuard.so").write_bytes(b"")
+            (case / "plugins" / "generic" / "libAerialLockSurfaceInput.so").write_bytes(b"")
             env.update(AERIAL_LOCK_PLUGIN_ROOT=str(case / "plugins"), PATH=str(tools_dir(root)))
         result = subprocess.run([shutil.which("dbus-run-session"), "--dbus-daemon=" + shutil.which("dbus-daemon"),
                                  "--", str(supervisor)], env=env,

@@ -256,6 +256,14 @@ static int lifecycleChild(int argc, char **argv) {
     const QString root = QString::fromUtf8(argv[2]);
     qunsetenv("QT_QPA_GENERIC_PLUGINS");
     QGuiApplication application(argc, argv);
+    QPluginLoader inputLoader(root + "/stage/usr/lib/aerial-lock/qt-plugins/generic/libAerialLockSurfaceInput.so");
+    auto *inputFactory = qobject_cast<QGenericPlugin *>(inputLoader.instance());
+    if (!inputFactory) return 2;
+    qputenv("AERIAL_LOCK_SURFACE_INPUT_OWNER_PID", QByteArray::number(getpid()));
+    QObject *inputFacade = inputFactory->create("AerialLockSurfaceInput", QString());
+    if (!inputFacade || qgetenv("AERIAL_LOCK_SURFACE_INPUT_PID") != QByteArray::number(getpid())) return 2;
+    delete inputFacade;
+    inputLoader.unload();
     auto *native = application.nativeInterface<QNativeInterface::QWaylandApplication>();
     if (!native || !native->display()) return 2;
     wl_display *display = native->display();
@@ -292,7 +300,7 @@ static int lifecycleChild(int argc, char **argv) {
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("QT_QPA_PLATFORM", "offscreen");
     environment.insert("QT_PLUGIN_PATH", root + "/stage/usr/lib/aerial-lock/qt-plugins");
-    environment.insert("QT_QPA_GENERIC_PLUGINS", "AerialLockConnectionGuard");
+    environment.insert("QT_QPA_GENERIC_PLUGINS", "AerialLockConnectionGuard,AerialLockSurfaceInput");
     child.setProcessEnvironment(environment);
     child.start(QCoreApplication::applicationFilePath(), {"--guard-unrelated-child"});
     if (!child.waitForFinished(5000) || child.exitStatus() != QProcess::NormalExit || child.exitCode()) return 1;
@@ -317,7 +325,9 @@ int main(int argc, char **argv) {
     if (argc > 1 && !std::strcmp(argv[1], "--guard-unrelated-child")) {
         QGuiApplication application(argc, argv);
         return qgetenv("AERIAL_LOCK_CONNECTION_GUARD_OWNER_PID") == QByteArray::number(getpid())
-            || qgetenv("AERIAL_LOCK_CONNECTION_GUARD_PID") == QByteArray::number(getpid()) ? 1 : 0;
+            || qgetenv("AERIAL_LOCK_CONNECTION_GUARD_PID") == QByteArray::number(getpid())
+            || qgetenv("AERIAL_LOCK_SURFACE_INPUT_OWNER_PID") == QByteArray::number(getpid())
+            || qgetenv("AERIAL_LOCK_SURFACE_INPUT_PID") == QByteArray::number(getpid()) ? 1 : 0;
     }
     QCoreApplication application(argc, argv);
     const QStringList args = application.arguments();

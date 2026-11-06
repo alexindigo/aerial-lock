@@ -428,6 +428,31 @@ Scope {
             onScreenChanged: register()
             Component.onDestruction: root.unregisterSurface(lockSurface)
 
+            // Only these native windows are eligible for pre-focus key
+            // retention. Settings, themes' auxiliary windows and popups are not.
+            readonly property var inputWindow: surfaceInput.surfaceWindow
+            Binding {
+                target: lockSurface.inputWindow
+                property: "objectName"
+                value: "aerial-lock-surface"
+                when: lockSurface.inputWindow !== null
+            }
+
+            // A window can receive its first key before Qt's activation-time
+            // focus resolution. Construct its editor with the surface, directly
+            // in the window's focus scope, rather than behind a Loader scope.
+            // The panel surface leaves input exclusively to its theme's field.
+            AuthInputSink {
+                id: surfaceInput
+                visible: root.selectedSurface === null || root.selectedSurface.surface !== lockSurface
+                enabled: visible
+                input: lockContext.auth.input
+                inputBusy: lockContext.auth.inProgress
+                responseVisible: lockContext.auth.responseVisible
+                maxResponseSize: lockContext.auth.maxResponseSize
+                onSubmitRequested: lockContext.auth.submit()
+            }
+
             // Video background (d32) — behind the theme (first child
             // paints last-on-bottom). Never eager: active stays false when
             // no source is configured, so libmpv is not started for

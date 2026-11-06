@@ -10,8 +10,11 @@ ShellRoot {
     function guardReady() {
         return Quickshell.env("AERIAL_LOCK_CONNECTION_GUARD_PID") === String(Quickshell.processId)
     }
+    function inputReady() {
+        return Quickshell.env("AERIAL_LOCK_SURFACE_INPUT_PID") === String(Quickshell.processId)
+    }
     Component.onCompleted: {
-        if (!root.guardReady()) {
+        if (!root.guardReady() || !root.inputReady()) {
             root.exitCode = 72
             deferredQuit.start()
         }
@@ -87,7 +90,7 @@ ShellRoot {
     }
 
     function maybeLock() {
-        if (!root.guardReady()) {
+        if (!root.guardReady() || !root.inputReady()) {
             root.exitCode = 72
             deferredQuit.start()
             return

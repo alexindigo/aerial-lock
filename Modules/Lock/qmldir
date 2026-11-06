@@ -5,5 +5,7 @@ AccentSampler AccentSampler.qml
 AccentTone AccentTone.js
 ThemeHost ThemeHost.qml
 AuthField AuthField.qml
+AuthEditor AuthEditor.qml
+AuthInputSink AuthInputSink.qml
 Avatar Avatar.qml
 FrostedText FrostedText.qml
