@@ -139,6 +139,18 @@ lock alive. Each policy switch and compositor-disconnect exit are covered.
 Private runtime sockets use a shared short namespace under `TMPDIR`, with
 encoded-path length preflight before launching a fixture.
 
+Cross-process file receipts and runner markers use `fixture_files.publish`:
+write and close a dot-prefixed temporary file beside the target, then rename.
+Existence and marker globs therefore expose only complete snapshots. Journal
+appends serialize replacement snapshots with a separate lock, preserving every
+record even if runner generations overlap. Empty control markers carry no payload;
+streaming logs are read for content, never treated as complete on existence.
+The C++ idle peer uses flushed newline events, not file receipts. The native
+BLOCKED probe already publishes its JSON with `QSaveFile::commit()`.
+`fixture-publication` pauses the actual generated idle runner after open and
+before write, observes target absence, then verifies exact release bytes. It
+also checks journal replacement visibility and failed-publication preservation.
+
 ## Real-session integration drivers
 
 Stock wtype 0.4 writes its keymap to a hardcoded shared temporary path, ignoring

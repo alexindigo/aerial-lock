@@ -29,11 +29,13 @@ with tempfile.TemporaryDirectory(prefix="release-") as directory, PrivateRuntime
     root = Path(directory)
     runner = root / "runner"
     runner.write_text('''#!/usr/bin/python3
-import os, socket, time
+import os, socket, sys, time
 from pathlib import Path
+sys.path.insert(0, ''' + repr(str(Path(__file__).resolve().parent)) + ''')
+from fixture_files import publish
 p = Path(os.environ["RELEASE_CASE"])
-(p / "mask").write_text(Path("/proc/self/status").read_text())
-with (p / "launches").open("a") as out: out.write(str(os.getpid()) + "\\n")
+publish(p / "mask", Path("/proc/self/status").read_text())
+publish(p / "launches", str(os.getpid()) + "\\n", append=True)
 report = None
 while True:
     if (p / "stop").exists(): raise SystemExit(0)
@@ -47,7 +49,7 @@ while True:
         try: data = report.recv(1024)
         except BlockingIOError: data = None
         if data:
-            with (p / "received").open("ab") as out: out.write(data)
+            publish(p / "received", data, append=True)
             time.sleep(0.1)
             raise SystemExit(int(os.environ.get("RELEASE_EXIT", "0")))
     time.sleep(0.01)

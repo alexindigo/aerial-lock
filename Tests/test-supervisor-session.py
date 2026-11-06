@@ -54,11 +54,13 @@ with tempfile.TemporaryDirectory(prefix="aerial-supervisor-") as directory, \
     # The stub is the supervisor's direct child, as the real runner's exec'd qs
     # is. It reports "locked" over the supervisor's channel only when told to.
     runner.write_text("#!/usr/bin/python3\n"
-                      "import os, socket, time\nfrom pathlib import Path\n"
+                      "import os, socket, sys, time\nfrom pathlib import Path\n"
+                      f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+                      "from fixture_files import publish\n"
                       f"marks, control = Path({str(marks)!r}), Path({str(control)!r})\n"
                       "display = Path(os.environ['WAYLAND_DISPLAY']).name\n"
                       "ordinal = len(list(marks.glob(display + '.*'))) + 1\n"
-                      "(marks / f'{display}.{ordinal}').write_text(str(os.getpid()))\n"
+                      "publish(marks / f'{display}.{ordinal}', str(os.getpid()))\n"
                       "report = None\n"
                       "while True:\n"
                       "    if (control / 'release').exists():\n"

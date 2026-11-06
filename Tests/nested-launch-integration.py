@@ -13,6 +13,7 @@ import time
 from types import SimpleNamespace
 
 from owned_instance import OwnedInstance, process_identity
+from fixture_files import publish
 
 spec = importlib.util.spec_from_file_location("driver", Path(__file__).with_name("remediation-driver.py"))
 driver = importlib.util.module_from_spec(spec)
@@ -55,7 +56,7 @@ def observe_bash(argv):
     # The intentional bash -> wrapper -> qs exec changes executable, not owner
     # PID/starttime. Preserve the stable identity across that transition.
     identity.pop("executable")
-    (output / "launched.json").write_text(json.dumps(identity))
+    publish(output / "launched.json", json.dumps(identity))
     try:
         locker.wait_line(lambda line: "ext_session_lock_v1" in line and ".locked()" in line)
         pid = locker.process.pid
@@ -67,13 +68,13 @@ def observe_bash(argv):
         assert b"AERIAL_LOCK_CONNECTION_GUARD_PID" not in env and b"QT_WAYLAND_RECONNECT" not in env
         assert env[b"QS_DISABLE_CRASH_HANDLER"] == b"1"
         (output / "maps.txt").write_text(maps)
-        (output / "ready.json").write_text(json.dumps({"pid": pid, "argv": argv, "same_pid_exec": True}))
+        publish(output / "ready.json", json.dumps({"pid": pid, "argv": argv, "same_pid_exec": True}))
         status = locker.finish(60)
         assert status == 0
         assert ".unlock_and_destroy()" in (output / "locker.redacted.log").read_text()
-        (output / "exit.json").write_text(json.dumps({"exit": status, "unlock_and_destroy": True}))
+        publish(output / "exit.json", json.dumps({"exit": status, "unlock_and_destroy": True}))
     except Exception as error:
-        (output / "observer-failure.json").write_text(json.dumps({"error": str(error), "pid": locker.process.pid}))
+        publish(output / "observer-failure.json", json.dumps({"error": str(error), "pid": locker.process.pid}))
         raise
 
 

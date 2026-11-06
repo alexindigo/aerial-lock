@@ -122,6 +122,8 @@ add_test(NAME idle-logind
             "${AERIAL_LOCK_SOURCE}/idle/aerial-idle"
             "${AERIAL_LOCK_SOURCE}/supervisor/aerial-lock-supervisor"
             "$<TARGET_FILE:idle-bus-fixture>")
+add_test(NAME fixture-publication
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-fixture-publication.py")
 
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
 set(IDLE_INHIBIT_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml")

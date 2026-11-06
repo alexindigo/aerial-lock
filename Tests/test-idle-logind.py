@@ -50,13 +50,14 @@ class Case:
         self.launcher = self.root / "aerial-lock"
         self.runner = self.root / "runner"
         self.launcher.write_text('''#!/usr/bin/python3
-import json, os
+import json, os, sys
 from pathlib import Path
+sys.path.insert(0, ''' + repr(str(source / "Tests")) + ''')
+from fixture_files import publish
 p = Path(''' + repr(str(self.root)) + ''')
-with (p / "launches").open("a") as f:
-    f.write(json.dumps(dict(pid=os.getpid(), ppid=os.getppid(), sid=os.getsid(0), cwd=os.getcwd(),
-                           shell=os.environ.get("AERIAL_LOCK_SHELL"),
-                           managerSentinel=os.environ.get("IDLE_MANAGER_SENTINEL"))) + "\\n")
+publish(p / "launches", json.dumps(dict(pid=os.getpid(), ppid=os.getppid(), sid=os.getsid(0), cwd=os.getcwd(),
+                                      shell=os.environ.get("AERIAL_LOCK_SHELL"),
+                                      managerSentinel=os.environ.get("IDLE_MANAGER_SENTINEL"))) + "\\n", append=True)
 os.execve(''' + repr(str(lock_supervisor)) + ''', [''' + repr(str(lock_supervisor)) + '''],
           dict(os.environ, AERIAL_LOCK_RUNNER=''' + repr(str(self.runner)) + '''))
 ''')
@@ -64,9 +65,11 @@ os.execve(''' + repr(str(lock_supervisor)) + ''', [''' + repr(str(lock_superviso
         self.runner.write_text('''#!/usr/bin/python3
 import json, os, socket, sys, time
 from pathlib import Path
+sys.path.insert(0, ''' + repr(str(source / "Tests")) + ''')
+from fixture_files import publish
 p = Path(''' + repr(str(self.root)) + ''')
-with (p / "runners").open("a") as f: f.write(str(os.getpid()) + "\\n")
-(p / "runner-args").write_text(json.dumps(sys.argv[1:]))
+publish(p / "runners", str(os.getpid()) + "\\n", append=True)
+publish(p / "runner-args", json.dumps(sys.argv[1:]))
 report = None
 while not (p / "stop").exists():
     if report is None and (p / "engage").exists():
@@ -78,7 +81,7 @@ while not (p / "stop").exists():
         try: data = report.recv(1024)
         except BlockingIOError: data = None
         if data:
-            with (p / "received").open("ab") as f: f.write(data)
+            publish(p / "received", data, append=True)
             raise SystemExit(0)
     time.sleep(0.01)
 ''')
