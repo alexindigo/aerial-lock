@@ -185,8 +185,14 @@ is the reference implementation (adapted to the context by `AuthField`).
 Observe `activeWriter` across surface transfers, flush the active editor on
 `focusFlushRequested`, and mirror every authoritative revision even while
 inactive. `focusTransferRequested` finishes the outgoing editor before authority
-transfer. `transferFocus()` defers an editor replacement while composition is
-active; `canFocus(token)` guards native focus by the same boundary. The pending
+transfer. Report `setWindowActive(token, active)` on registration, attachment and
+window activation changes, including deactivation. `transferFocus()` immediately
+accepts a compositor grant from an inactive window to an active one, even if the
+outgoing editor retains a native composing flag with empty preedit. Replacement
+within the same window defers while composition is active; `canFocus(token)`
+guards native focus by the same boundary. Report composition activity on native
+focus and window activation changes as well as IME events: a composing flag on
+an unfocused editor is not a live composition. The pending
 editor takes over after the natural commit has published. This is separate from
 the elective theme handoff.
 

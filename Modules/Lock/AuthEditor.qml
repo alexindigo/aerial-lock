@@ -127,7 +127,23 @@ Item {
     function updateCursorVisibility() {
         field.cursorVisible = root.visible && !root.inputBusy
     }
-    onHasActiveFocusChanged: Qt.callLater(root.updateCursorVisibility)
+    onHasActiveFocusChanged: {
+        root.reportActivity()
+        Qt.callLater(root.updateCursorVisibility)
+    }
+
+    // Qt can retain inputMethodComposing with empty preedit after focus-out.
+    // Activity belongs to the current native focus, not that residual flag.
+    function reportActivity() {
+        if (root.input !== null && _token >= 0)
+            root.input.setActivity(_token, root.windowActive && root.hasActiveFocus
+                                   && field.inputMethodComposing, _gestureActive)
+    }
+
+    function reportWindowActivity() {
+        if (root.input !== null && _token >= 0)
+            root.input.setWindowActive(_token, root.windowActive)
+    }
 
     // ---- Writer lifecycle / synchronization state ----
     property int _token: -1
@@ -207,7 +223,7 @@ Item {
             model.offerTunings(_token, root.initialSpacePolicy, root.initialSpaceScope)
         // Hydrate from the authoritative record before publishing or focus.
         pull()
-        model.setActivity(_token, field.inputMethodComposing, _gestureActive)
+        reportActivity()
         focusField()
     }
 
@@ -219,12 +235,13 @@ Item {
         editGesture.enabled = false
         _gestureActive = false
         editGesture.enabled = true
-        root.input.setActivity(_token, field.inputMethodComposing, false)
+        reportActivity()
         flush()
         attemptRelease()
     }
 
     function activateSurface() {
+        root.reportWindowActivity()
         if (_token >= 0 && root.windowActive && root.visible && root.enabled && !_releasedForHandoff) {
             root.input.transferFocus(_token)
             root.focusField()
@@ -377,6 +394,8 @@ Item {
     // (callLater — a resequencing, not a wall-clock timer).
     property bool windowActive: Window.active
     onWindowActiveChanged: {
+        root.reportWindowActivity()
+        root.reportActivity()
         if (windowActive) {
             root.activateSurface()
             // Keep the existing local focus backstop after Qt's resolution,
@@ -439,8 +458,7 @@ Item {
                 root.input.noteInteraction(root._token)
         }
         onInputMethodComposingChanged: {
-            if (root._active)
-                root.input.setActivity(root._token, field.inputMethodComposing, root._gestureActive)
+            root.reportActivity()
             if (!field.inputMethodComposing)
                 root.attemptRelease()
         }
@@ -450,7 +468,7 @@ Item {
             onPressedChanged: {
                 root._gestureActive = pressed
                 if (root._active) {
-                    root.input.setActivity(root._token, field.inputMethodComposing, pressed)
+                    root.reportActivity()
                     if (pressed)
                         root.input.noteInteraction(root._token)
                     else

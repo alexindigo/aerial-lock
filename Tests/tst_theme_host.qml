@@ -210,7 +210,14 @@ Item {
             compare(fallbackSpy.count, 0)
             model.abortHandoff()
         }
-        function test_custom_theme_activation_selects_its_writer() {
+        function test_custom_theme_activation_selects_its_writer_data() {
+            return [
+                { tag: "cross-window", crossWindow: true },
+                { tag: "same-window", crossWindow: false }
+            ]
+        }
+
+        function test_custom_theme_activation_selects_its_writer(data) {
             // This fixture implements the writer contract without AuthField.
             model.setActivity(writer, true, false)
             loadCandidate()
@@ -221,8 +228,19 @@ Item {
             model.transferFocus(sink)
             compare(model.activeWriter, sink)
             host.windowActive = false
+            model.setWindowActive(sink, !data.crossWindow)
+            model.setActivity(sink, true, false)
+            var generation = model.generation
             host.visible = true
             host.windowActive = true
+            if (!data.crossWindow) {
+                wait(0)
+                compare(model.activeWriter, sink, "same-window custom callback waits for composition")
+                compare(model.generation, generation)
+                model.setActivity(sink, false, false)
+            } else {
+                compare(model.activeWriter, candidate.writerToken, "cross-window custom writer activates immediately")
+            }
             tryCompare(model, "activeWriter", candidate.writerToken)
             compare(model.text, "synthetic-draft")
             verify(!host.usingFallback)

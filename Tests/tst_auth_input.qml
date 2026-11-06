@@ -85,6 +85,36 @@ Item {
             compare(model.activeWriter, a)
         }
 
+        function test_cross_window_activation_outranks_stale_composition() {
+            var outgoing = model.registerWriter(true)
+            var replacement = model.registerWriter(true)
+            var incoming = model.registerWriter(false)
+            model.setWindowActive(outgoing, true)
+            model.setWindowActive(replacement, true)
+            model.setWindowActive(incoming, false)
+            verify(model.transferFocus(outgoing))
+            verify(model.applyEdit(outgoing, model.revision, "synthetic", 9, 9))
+            model.setActivity(outgoing, true, false)
+            verify(!model.canFocus(replacement))
+            verify(!model.transferFocus(replacement))
+            var generation = model.generation
+            // Native window focus changes independently of a residual IME flag.
+            model.setWindowActive(outgoing, false)
+            model.setWindowActive(replacement, false)
+            model.setWindowActive(incoming, true)
+            verify(model.compositionActive)
+            verify(model.canFocus(incoming))
+            verify(model.transferFocus(incoming))
+            compare(model.activeWriter, incoming)
+            compare(model.generation, generation + 1)
+            verify(model.applyEdit(incoming, model.revision, "synthetic!", 10, 10))
+            model.setActivity(outgoing, false, false)
+            wait(0)
+            compare(model.activeWriter, incoming, "old pending replacement cannot reclaim authority")
+            compare(model.text, "synthetic!")
+            verify(!model.applyEdit(outgoing, model.revision, "stale", 5, 5))
+        }
+
         function test_pending_focus_obeys_latest_request_and_writer_lifetime() {
             var sink = model.registerWriter(false)
             var panel = model.registerWriter(true)

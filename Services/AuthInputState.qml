@@ -59,6 +59,7 @@ QtObject {
     property int focusedWriter: -1
     property int _pendingFocusWriter: -1
     property var _writers: ({})
+    property var _windowActiveWriters: ({})
     property bool _handoffHadFocus: false
     property int generation: 0
     // "" (idle) | "releasing" (outgoing editor flushes when safe) |
@@ -114,6 +115,7 @@ QtObject {
 
     function unregisterWriter(token) {
         delete _writers[token]
+        delete _windowActiveWriters[token]
         if (_pendingFocusWriter === token)
             _pendingFocusWriter = -1
         if (focusedWriter === token)
@@ -121,12 +123,19 @@ QtObject {
         releaseWriter(token)
     }
 
-    // Window activation and panel attachment both select an editor. In the
-    // cross-window case Qt/Fcitx's normal focus-out has already ended preedit.
-    // A same-window replacement must keep the current native focus object
-    // until composition ends: even forceActiveFocus would commit it in Qt.
+    // Editors report their window's activation, not window/Item references.
+    // Multiple writers in one window report the same value. A compositor
+    // grant to a different window outranks the old editor's composition flag;
+    // same-window replacement still waits for natural composition completion.
+    function setWindowActive(token, active) {
+        if (_writers.hasOwnProperty(token))
+            _windowActiveWriters[token] = active
+    }
+
     function canFocus(token) {
-        return !compositionActive || activeWriter === token
+        var crossWindow = _windowActiveWriters[token] === true
+                && _windowActiveWriters[activeWriter] === false
+        return !compositionActive || activeWriter === token || crossWindow
     }
 
     function transferFocus(token) {

@@ -230,6 +230,17 @@ exactly-once replay, key metadata, the 64-event/250-ms bounds, count-only loggin
 destruction cleanup and non-interception of input-method events. Real platform composition and
 fast cross-output input are exercised in the real-session driver.
 
+`native-authority-natural`, `native-authority-empty-state`,
+`native-authority-same-window` and `native-authority-focus-out` exercise the
+actual editor-to-shared-draft path
+with two QQuickWindows. They cover normal focus-out commit, the empty residual
+composing state from the stock Mozc type/Escape reduction, immediate incoming
+authority and exactly-once first-key publication, and same-window replacement
+waiting for natural completion. The focus-out case observes current activity
+before an incoming editor exists, while leaving Qt's residual flag untouched.
+These are public Qt event surrogates, not real
+platform-IME proof.
+
 `native-input-sink-panel` injects public `QInputMethodEvent` preedit/commit
 events into the actual editor. It attaches the panel to a composing sink's
 native window and checks retained native focus, writer/generation and preedit,

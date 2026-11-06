@@ -37,6 +37,7 @@ Item {
     // AuthField. Surface activation selects that theme writer as well.
     property bool windowActive: Window.active
     onWindowActiveChanged: {
+        root.context.auth.input.setWindowActive(root.context.auth.input.themeWriter, windowActive)
         if (windowActive && root.visible && root.enabled) {
             root.context.auth.input.transferFocus(root.context.auth.input.themeWriter)
             Qt.callLater(root.focusInput)
@@ -237,6 +238,9 @@ Item {
 
     Connections {
         target: context.auth.input
+        function onThemeWriterChanged() {
+            root.context.auth.input.setWindowActive(root.context.auth.input.themeWriter, root.windowActive)
+        }
         function onActiveWriterChanged() {
             if (root.context.auth.input.activeWriter >= 0
                     && root.context.auth.input.activeWriter === root.context.auth.input.themeWriter)
@@ -315,6 +319,7 @@ Item {
     function focusInput() {
         if (!root.visible || !root.enabled || root.context.auth.input.themeWriter < 0)
             return
+        root.context.auth.input.setWindowActive(root.context.auth.input.themeWriter, root.windowActive)
         if (root.windowActive)
             root.context.auth.input.transferFocus(root.context.auth.input.themeWriter)
         // Custom theme callbacks (including the root-focus fallback) must

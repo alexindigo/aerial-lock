@@ -19,6 +19,12 @@ add_test(NAME native-input-migration
     COMMAND native-input-probe --migration "${AERIAL_LOCK_SOURCE}/Tests/auth-input-fixture.qml")
 add_test(NAME native-input-sink-panel
     COMMAND native-input-probe --sink-panel "${AERIAL_LOCK_SOURCE}/Tests/auth-input-fixture.qml")
+add_executable(cross-window-authority cross-window-authority.cpp)
+target_link_libraries(cross-window-authority PRIVATE Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Test)
+foreach(mode IN ITEMS natural empty-state same-window focus-out)
+    add_test(NAME native-authority-${mode}
+        COMMAND cross-window-authority "${mode}" "${AERIAL_LOCK_SOURCE}/Tests/cross-window-authority.qml")
+endforeach()
 add_executable(surface-input-filter-probe surface-input-filter-probe.cpp)
 target_link_libraries(surface-input-filter-probe PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Test)
 add_test(NAME surface-input-filter COMMAND surface-input-filter-probe)
