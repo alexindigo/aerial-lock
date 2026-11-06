@@ -250,7 +250,7 @@ Scope {
         anchors.fill: parent
         visible: parent !== null
         enabled: visible
-        focus: visible
+        focus: visible && themeHost.editorActive
         context: lockContext
         config: root.config
         logger: root.logger
@@ -444,8 +444,7 @@ Scope {
             // The panel surface leaves input exclusively to its theme's field.
             AuthInputSink {
                 id: surfaceInput
-                visible: root.selectedSurface === null || root.selectedSurface.surface !== lockSurface
-                enabled: visible
+                panelAttached: root.selectedSurface !== null && root.selectedSurface.surface === lockSurface
                 input: lockContext.auth.input
                 inputBusy: lockContext.auth.inProgress
                 responseVisible: lockContext.auth.responseVisible

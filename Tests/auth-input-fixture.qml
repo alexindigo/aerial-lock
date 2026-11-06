@@ -29,6 +29,22 @@ Item {
     }
     function newSink(attachment) { sink = sinkComponent.createObject(attachment) }
 
+    // Same-native-window panel arrival, matching the production sink/panel
+    // overlap. The sink remains alive; only its editing role is replaced.
+    function attachPanelToSink() {
+        // Also exercise sink enablement at panel arrival. The legacy branch
+        // lets the same regression run against master's old visibility API.
+        if (sink.hasOwnProperty("panelAttached"))
+            sink.panelAttached = true
+        else {
+            sink.visible = false
+            sink.enabled = false
+        }
+        rig.parent = sink.parent
+        rig.fieldA.windowActive = true
+        rig.fieldA.focusField()
+    }
+
     Component {
         id: rigComponent
         Item {

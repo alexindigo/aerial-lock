@@ -85,6 +85,49 @@ Item {
             compare(model.activeWriter, a)
         }
 
+        function test_pending_focus_obeys_latest_request_and_writer_lifetime() {
+            var sink = model.registerWriter(false)
+            var panel = model.registerWriter(true)
+            var next = model.registerWriter(false)
+            verify(model.transferFocus(sink))
+            var generation = model.generation
+            model.setActivity(sink, true, false)
+            verify(!model.transferFocus(panel))
+            verify(!model.transferFocus(next))
+            model.unregisterWriter(next)
+            model.setActivity(sink, false, false)
+            wait(0)
+            compare(model.activeWriter, sink)
+            compare(model.generation, generation)
+            model.setActivity(sink, true, false)
+            verify(!model.transferFocus(panel))
+            // A focus grant back to the original owner cancels replacement.
+            verify(model.transferFocus(sink))
+            model.setActivity(sink, false, false)
+            wait(0)
+            compare(model.activeWriter, sink)
+            compare(model.generation, generation)
+        }
+
+        function test_pending_focus_waits_through_commit_with_new_preedit() {
+            var sink = model.registerWriter(false)
+            var panel = model.registerWriter(true)
+            verify(model.transferFocus(sink))
+            model.setActivity(sink, true, false)
+            verify(!model.transferFocus(panel))
+            // One native event can finish one segment and start the next.
+            model.setActivity(sink, false, false)
+            verify(model.applyEdit(sink, model.revision, "synthetic", 9, 9))
+            model.setActivity(sink, true, false)
+            wait(0)
+            compare(model.activeWriter, sink)
+            verify(model.compositionActive)
+            model.setActivity(sink, false, false)
+            verify(model.applyEdit(sink, model.revision, "synthetic!", 10, 10))
+            tryCompare(model, "activeWriter", panel)
+            compare(model.text, "synthetic!")
+        }
+
         function test_applyEdit_guards() {
             var a = model.registerWriter()
             var b = model.registerWriter()

@@ -230,6 +230,16 @@ exactly-once replay, key metadata, the 64-event/250-ms bounds, count-only loggin
 destruction cleanup and non-interception of input-method events. Real platform composition and
 fast cross-output input are exercised in the real-session driver.
 
+`native-input-sink-panel` injects public `QInputMethodEvent` preedit/commit
+events into the actual editor. It attaches the panel to a composing sink's
+native window and checks retained native focus, writer/generation and preedit,
+continued composition, no submission on composing Return, one commit revision,
+then panel authority. The QML suites check fallback/theme declarative focus,
+pending-focus cancellation, writer retirement and commit-with-new-preedit ordering. These are synthetic Qt
+editor-contract checks. Real Fcitx/Mozc sink-to-panel composition is the IME
+experiment's M3 regression after rebasing onto this fix; master cannot provide
+that proof while its stock candidate-popup limitation remains.
+
 The staged launch driver also cold-loads a real locker for each D-Bus
 `Release()` and documented `pkill -USR1 -f '^aerial-lock-supervisor'` route:
 it observes `unlock_and_destroy`, supervisor exit 0 without respawn and desktop

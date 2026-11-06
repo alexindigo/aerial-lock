@@ -52,6 +52,16 @@ Item {
             windowActive: false
         }
     }
+    Component {
+        id: hostComponent
+        LockModule.ThemeHost {
+            width: 640; height: 480
+            visible: false
+            windowActive: false
+            config: null
+            logger: Services.Logger
+        }
+    }
 
     TestCase {
         id: tests
@@ -60,6 +70,7 @@ Item {
         property var context: null
         property var surfaces: null
         property var candidate: null
+        property var host: null
         property var accepted: []
 
         Connections {
@@ -75,8 +86,11 @@ Item {
             surfaces = surfacesComponent.createObject(root, {context: context})
             accepted = []
             candidate = null
+            host = null
         }
         function cleanup() {
+            if (host)
+                host.destroy()
             if (candidate)
                 candidate.destroy()
             surfaces.destroy()
@@ -174,6 +188,71 @@ Item {
             compare(accepted.length, 1)
             compare(accepted[0], "ab")
             compare(context.auth.input.activeWriter, writer)
+        }
+        function test_panel_focus_waits_for_composing_sink() {
+            activate(surfaces.panel)
+            surfaces.sink.visible = true
+            activate(surfaces.sink, surfaces.panel)
+            keyClick(Qt.Key_A)
+            var model = context.auth.input
+            var writer = model.activeWriter
+            var generation = model.generation
+            var revision = model.revision
+            // Synthetic activity drives the model contract here; the native
+            // probe covers real TextInput preedit and its natural commit.
+            model.setActivity(writer, true, false)
+            surfaces.panel.windowActive = true
+            surfaces.panel.focusField()
+            wait(0)
+            compare(model.activeWriter, writer)
+            compare(model.generation, generation)
+            compare(model.revision, revision)
+            verify(surfaces.sink.hasActiveFocus)
+            verify(model.compositionActive)
+            model.setActivity(writer, false, false)
+            tryCompare(model, "activeWriter", surfaces.panel._token)
+            verify(surfaces.panel.hasActiveFocus)
+            compare(model.text, "a")
+        }
+        function test_panel_visibility_cannot_steal_composing_sink_focus_data() {
+            return [{tag: "fallback", theme: false}, {tag: "theme", theme: true}]
+        }
+        function test_panel_visibility_cannot_steal_composing_sink_focus(data) {
+            activate(surfaces.panel)
+            surfaces.sink.visible = true
+            activate(surfaces.sink, surfaces.panel)
+            var model = context.auth.input
+            var writer = model.activeWriter
+            host = hostComponent.createObject(root, {context: context})
+            model.setActivity(writer, true, false)
+            // Replace the inactive theme editor, then display its fallback
+            // on the same active window as the still-composing sink.
+            model.requestHandoff()
+            var fallback = findChild(host, "authField")
+            verify(fallback !== null)
+            compare(model.themeWriter, fallback._token)
+            host.visible = true
+            host.windowActive = true
+            host.focusInput()
+            var incoming = fallback
+            if (data.theme) {
+                var lifecycle = findChild(host, "themeLifecycle")
+                var loader = findChild(host, "themeCandidateLoader")
+                lifecycle.phase = "candidate"
+                host.allowLoading = true
+                loader.setSource(Qt.resolvedUrl("../Themes/Macintosh.qml"), {context: context})
+                tryCompare(host, "settled", true)
+                incoming = findChild(loader.item, "authField")
+                verify(incoming !== null)
+                compare(model.themeWriter, incoming._token)
+            }
+            wait(0)
+            compare(model.activeWriter, writer)
+            verify(model.compositionActive)
+            verify(surfaces.sink.hasActiveFocus)
+            model.setActivity(writer, false, false)
+            tryCompare(model, "activeWriter", incoming._token)
+            verify(incoming.hasActiveFocus)
         }
         function test_sink_preserves_panel_initial_space_profile() {
             activate(surfaces.panel)

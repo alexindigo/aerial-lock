@@ -57,6 +57,7 @@ QtObject {
     // Only theme writers participate in elective theme promotion.
     property int themeWriter: -1
     property int focusedWriter: -1
+    property int _pendingFocusWriter: -1
     property var _writers: ({})
     property bool _handoffHadFocus: false
     property int generation: 0
@@ -113,27 +114,43 @@ QtObject {
 
     function unregisterWriter(token) {
         delete _writers[token]
+        if (_pendingFocusWriter === token)
+            _pendingFocusWriter = -1
         if (focusedWriter === token)
             focusedWriter = -1
         releaseWriter(token)
     }
 
-    // Called only for compositor window activation, never pointer motion or
-    // item focus. Qt's old-window focus-out precedes new-window activation.
-    // Finish the old editor's normal focus-out path and transfer immediately;
-    // elective theme replacement remains a separate, deferrable transaction.
+    // Window activation and panel attachment both select an editor. In the
+    // cross-window case Qt/Fcitx's normal focus-out has already ended preedit.
+    // A same-window replacement must keep the current native focus object
+    // until composition ends: even forceActiveFocus would commit it in Qt.
+    function canFocus(token) {
+        return !compositionActive || activeWriter === token
+    }
+
     function transferFocus(token) {
         if (!_writers.hasOwnProperty(token))
-            return
+            return false
         focusedWriter = token
+        _pendingFocusWriter = token
+        if (!canFocus(token))
+            return false
+        _pendingFocusWriter = -1
         if (activeWriter === token)
-            return
+            return true
         focusTransferRequested(activeWriter)
         focusFlushRequested()
         compositionActive = false
         gestureActive = false
         activeWriter = token
         generation++
+        return true
+    }
+
+    function _finishPendingFocus() {
+        if (_pendingFocusWriter !== -1 && !compositionActive)
+            transferFocus(_pendingFocusWriter)
     }
 
     // Normal activation: the visible, enabled editor claims an idle model.
@@ -224,6 +241,11 @@ QtObject {
             return
         compositionActive = composing
         gestureActive = gesture
+        // TextInput reports composition ending inside its input-method event,
+        // before textEdited. Let that one natural commit publish before pull,
+        // disabling the sink or changing native focus can re-enter the event.
+        if (!composing && _pendingFocusWriter !== -1)
+            Qt.callLater(root._finishPendingFocus)
     }
 
     // ---- Handoff lifecycle ----

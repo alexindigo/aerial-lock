@@ -127,16 +127,17 @@ int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     SurfaceInputFilter inputFilter;
     const bool migration = argc > 1 && QString::fromUtf8(argv[1]) == QStringLiteral("--migration");
+    const bool sinkPanel = argc > 1 && QString::fromUtf8(argv[1]) == QStringLiteral("--sink-panel");
     QQmlEngine engine;
     QObject scopeOwner;
     std::unique_ptr<QQmlComponent> persistentComponent;
     auto view = std::make_unique<QQuickView>(&engine, nullptr);
     view->setObjectName(SurfaceInputFilter::windowName());
     viewPtr = view.get();
-    const int pathIndex = migration ? 2 : 1;
+    const int pathIndex = migration || sinkPanel ? 2 : 1;
     const QUrl source = QUrl::fromLocalFile(
         argc > pathIndex ? QString::fromUtf8(argv[pathIndex]) : QStringLiteral("auth-input-fixture.qml"));
-    if (migration) {
+    if (migration || sinkPanel) {
         // Match the production Scope's engine/creation-context ownership:
         // deleting a surface must not destroy the persistent editor's context.
         persistentComponent = std::make_unique<QQmlComponent>(&engine, source);
@@ -160,6 +161,57 @@ int main(int argc, char **argv) {
     (void)QTest::qWaitForWindowExposed(view.get());
     view->requestActivate();
     (void)QTest::qWaitForWindowActive(view.get(), 2000);
+
+    if (sinkPanel) {
+        call("newRig", 0, 0);
+        auto *rig = qobject_cast<QQuickItem *>(rootObj->property("rig").value<QObject *>());
+        QObject *context = rig->property("context").value<QObject *>();
+        QObject *model = context->property("auth").value<QObject *>()->property("input").value<QObject *>();
+        QQuickWindow survivor;
+        survivor.resize(640, 480);
+        survivor.show();
+        (void)QTest::qWaitForWindowExposed(&survivor);
+        call("newSink", QVariant::fromValue(survivor.contentItem()));
+        survivor.requestActivate();
+        (void)QTest::qWaitForWindowActive(&survivor, 2000);
+        viewPtr = &survivor;
+        QObject *sink = rootObj->property("sink").value<QObject *>();
+        QMetaObject::invokeMethod(sink, "focusField");
+        settle();
+        clicks("prefix");
+        QObject *const editor = focusInput();
+        const int writer = model->property("activeWriter").toInt();
+        const int revision = model->property("revision").toInt();
+        const int generation = model->property("generation").toInt();
+        ime(QStringLiteral("n"), QString());
+        expect(fComposing(), "sink-panel: sink composing before panel arrival");
+        call("attachPanelToSink");
+        expect(focusInput() == editor, "sink-panel: composing sink retains native focus");
+        expect(model->property("activeWriter").toInt() == writer,
+               "sink-panel: composing sink retains authority");
+        expect(model->property("generation").toInt() == generation,
+               "sink-panel: no authority change during preedit");
+        expect(fComposing() && fPreedit() == "n", "sink-panel: panel arrival preserves preedit");
+        expect(model->property("revision").toInt() == revision,
+               "sink-panel: panel arrival commits nothing");
+        ime(QStringLiteral("ni"), QString());
+        expect(focusInput() == editor && fPreedit() == "ni", "sink-panel: composition continues on original editor");
+        QTest::keyClick(viewPtr, Qt::Key_Return);
+        expect(rig->property("submitCount").toInt() == 0, "sink-panel: composing Return never submits");
+        // Public IME delivery models the one natural Return commit. Real
+        // Fcitx/Mozc proof belongs to the IME experiment's M3 after rebase.
+        ime(QString(), QString::fromUtf8("\xE3\x81\xAB"));
+        expectStr(model->property("text").toString(), QString::fromUtf8("prefix\xE3\x81\xAB"),
+                  "sink-panel: natural commit reaches shared draft exactly once");
+        expect(model->property("revision").toInt() == revision + 1, "sink-panel: one commit revision");
+        expect(model->property("activeWriter").toInt() == rig->property("fieldA").value<QObject *>()->property("_token").toInt(),
+               "sink-panel: panel takes authority after natural commit");
+        expect(focusInput() != editor && !fComposing(), "sink-panel: incoming panel focused after completion");
+        rig->setParentItem(nullptr);
+        delete sink;
+        printf("%s: %d failure(s)\n", failures == 0 ? "ALL OK" : "FAILURES", failures);
+        return failures == 0 ? 0 : 1;
+    }
 
     if (migration) {
         call("newRig", 1, 0);

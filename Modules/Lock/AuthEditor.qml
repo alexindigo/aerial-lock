@@ -112,7 +112,7 @@ Item {
     }
 
     function focusField() {
-        if (root.visible && root.enabled && field.enabled)
+        if (root.visible && root.enabled && field.enabled && root.input.canFocus(_token))
             field.forceActiveFocus()
     }
     // Prepare only this window's local focus chain as soon as it exists.
@@ -214,10 +214,6 @@ Item {
     function finishSurfaceEditing() {
         if (!_active)
             return
-        if (field.inputMethodComposing) {
-            console.warn("AuthEditor: composition still active at surface focus-in; requesting normal input-method commit")
-            InputMethod.commit()
-        }
         // A pointer gesture belongs to its surface, not the next keyboard
         // owner. Disabling the handler cancels its outstanding grab.
         editGesture.enabled = false

@@ -29,6 +29,10 @@ Item {
     readonly property bool usingFallback: !internal.useTheme
     readonly property bool settled: internal.settled
     readonly property var preferredTopics: internal.topics
+    // Declarative focus is subject to the same authority boundary as the
+    // focus callback. Displaying a mirror must not focus its native editor.
+    readonly property bool editorActive: context.auth.input.activeWriter >= 0
+            && context.auth.input.activeWriter === context.auth.input.themeWriter
     // A custom theme may implement its own conforming writer rather than
     // AuthField. Surface activation selects that theme writer as well.
     property bool windowActive: Window.active
@@ -233,6 +237,11 @@ Item {
 
     Connections {
         target: context.auth.input
+        function onActiveWriterChanged() {
+            if (root.context.auth.input.activeWriter >= 0
+                    && root.context.auth.input.activeWriter === root.context.auth.input.themeWriter)
+                Qt.callLater(root.focusInput)
+        }
         function onHandoffStateChanged() {
             if (internal.handoffPending && context.auth.input.handoffState === "awaitingClaim")
                 handoffClaimGrace.restart()
@@ -248,7 +257,7 @@ Item {
         context: root.context
         visible: !internal.useTheme
         enabled: visible
-        focus: visible
+        focus: visible && root.editorActive
     }
 
     Loader {
@@ -261,7 +270,7 @@ Item {
         active: !internal.settled || internal.useTheme
         visible: internal.useTheme
         enabled: visible
-        focus: internal.useTheme
+        focus: internal.useTheme && root.editorActive
         readonly property Item themeItem: item as Item
         property bool prepared: false
         onLoaded: {
@@ -304,10 +313,14 @@ Item {
     }
 
     function focusInput() {
-        if (!root.visible || !root.enabled)
+        if (!root.visible || !root.enabled || root.context.auth.input.themeWriter < 0)
             return
         if (root.windowActive)
             root.context.auth.input.transferFocus(root.context.auth.input.themeWriter)
+        // Custom theme callbacks (including the root-focus fallback) must
+        // obey the same native-composition boundary as the common editor.
+        if (!root.editorActive)
+            return
         if (!internal.useTheme) {
             fallbackPanel.focusInput()
             return

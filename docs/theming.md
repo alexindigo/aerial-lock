@@ -184,9 +184,11 @@ edits with `applyEdit`, respect `revision`, and request submission with
 is the reference implementation (adapted to the context by `AuthField`).
 Observe `activeWriter` across surface transfers, flush the active editor on
 `focusFlushRequested`, and mirror every authoritative revision even while
-inactive. `focusTransferRequested` ends the outgoing editor's ordinary
-focus-out path before immediate authority transfer; it is separate from the
-composition-safe elective theme handoff.
+inactive. `focusTransferRequested` finishes the outgoing editor before authority
+transfer. `transferFocus()` defers an editor replacement while composition is
+active; `canFocus(token)` guards native focus by the same boundary. The pending
+editor takes over after the natural commit has published. This is separate from
+the elective theme handoff.
 
 ### Initial-space tunings
 
@@ -304,10 +306,14 @@ windows and then set to the new surface's scenery, so a theme must tolerate
 Every other lock surface has an invisible editor of the same draft. Compositor
 keyboard activation transfers sole edit authority, without moving the panel or
 using hover focus. The panel field mirrors committed text and selection while
-another surface edits. The old owner's composition ends through its ordinary
+another surface edits. On cross-window activation, the old owner's composition ends through its ordinary
 input-method focus-out path and its pointer gesture is cancelled. Authority
 transfers immediately at compositor activation, before the first incoming key.
-This is separate from theme promotion, and sinks
+When the panel arrives on a composing sink's window, that sink stays enabled,
+focused and authoritative until composition finishes naturally. Panel focus
+requests wait; the panel mirrors only committed text. Declarative focus and
+custom theme focus callbacks follow that same authority boundary. This is
+separate from theme promotion, and sinks
 cannot claim a theme handoff. `AuthEditor` owns the common editing machinery;
 `AuthField` adapts the theme context and `AuthInputSink` takes only the draft,
 prompt properties and a submission callback.
