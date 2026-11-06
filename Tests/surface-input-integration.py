@@ -21,10 +21,25 @@ driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(driver)
 
 
+def teardown_steps(steps):
+    errors = []
+    for name, action in steps:
+        try:
+            action()
+        except BaseException as error:
+            errors.append((name, error))
+    return errors
+
+
+def error_records(errors):
+    return [dict(step=name, error=repr(error)) for name, error in errors]
+
+
 class PrivateIme:
     def __init__(self, session):
         self.session = session
         self.bus = self.daemon = None
+        self.teardown_errors = []
 
     def start(self):
         s = self.session
@@ -59,12 +74,18 @@ class PrivateIme:
         driver.run(["fcitx5-remote", *args], self.session.env, stdout=subprocess.DEVNULL)
 
     def stop(self):
-        if self.daemon and self.daemon.process.poll() is None:
-            self.daemon.process.terminate()
-            self.daemon.finish(5)
-        if self.bus and self.bus.poll() is None:
-            self.bus.terminate()
-            self.bus.wait(timeout=5)
+        def terminate(process):
+            if process is not None and process.poll() is None:
+                process.terminate()
+        errors = teardown_steps((
+            ("fcitx.terminate", lambda: terminate(self.daemon.process if self.daemon else None)),
+            ("fcitx.wait", lambda: self.daemon.finish(5) if self.daemon else None),
+            ("bus.terminate", lambda: terminate(self.bus)),
+            ("bus.wait", lambda: self.bus.wait(timeout=5) if self.bus else None),
+        ))
+        self.teardown_errors = error_records(errors)
+        if errors:
+            raise errors[0][1]
 
 
 def snapshot(session, predicate, after=0):
@@ -88,6 +109,39 @@ def text(session, payload, delay=0):
         argv.extend(["-d", str(delay)])
     driver.run([*argv, "-"], session.env, input=payload.encode(),
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def finish_run(session, ime, result):
+    def write_result():
+        (session.output / "surface-input.json").write_text(json.dumps(result, indent=2, ensure_ascii=True) + "\n")
+
+    # Keep the pre-cleanup snapshot for the safety latch's held-lock wait.
+    # An exception in any action must not skip the other owned resources.
+    errors = teardown_steps((
+        ("result.before_cleanup", write_result),
+        ("session.cleanup", session.cleanup),
+        ("ime.stop", ime.stop),
+    ))
+    if getattr(ime, "teardown_errors", None):
+        result["ime_teardown_errors"] = ime.teardown_errors
+
+    def record_errors():
+        if errors:
+            result.update(status="FAIL", teardown_errors=error_records(errors))
+
+    record_errors()
+    for name, action in (
+        ("result.after_cleanup", write_result),
+        ("status", lambda: print(json.dumps(dict(status=result["status"], results=str(session.output))), flush=True)),
+    ):
+        errors.extend(teardown_steps(((name, action),)))
+        record_errors()
+    # If the status stream failed, persist that failure too where possible.
+    if errors and errors[-1][0] == "status":
+        errors.extend(teardown_steps((("result.after_status_error", write_result),)))
+        record_errors()
+    if errors:
+        raise errors[0][1]
 
 
 def main():
@@ -210,13 +264,7 @@ def main():
             result["locker_exit_at_error"] = s.locker.process.poll()
         raise
     finally:
-        # Preserve the original error even if the existing safety latch must
-        # retain a still-held locker during cleanup.
-        (s.output / "surface-input.json").write_text(json.dumps(result, indent=2, ensure_ascii=True) + "\n")
-        s.cleanup()
-        ime.stop()
-        (s.output / "surface-input.json").write_text(json.dumps(result, indent=2, ensure_ascii=True) + "\n")
-        print(json.dumps(dict(status=result["status"], results=str(s.output))), flush=True)
+        finish_run(s, ime, result)
     assert result["status"] == "PASS", "lost/duplicated input or unfinished composition; retain evidence and ask"
 
 

@@ -25,6 +25,8 @@ set_tests_properties(surface-input-filter PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 add_executable(connection-loss-probe connection-loss-probe.cpp)
 target_link_libraries(connection-loss-probe PRIVATE Qt6::Core pthread)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME surface-input-teardown
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test-surface-input-teardown.py")
 # VM integration drivers validate an operator-supplied owned-instance manifest
 # (Tests/README.md "Owned manifest"); its regression runs only when one is given.
 set(AERIAL_LOCK_VM_RECORD "" CACHE FILEPATH "Operator-supplied owned VM/session manifest")
