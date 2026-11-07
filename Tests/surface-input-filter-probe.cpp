@@ -1,7 +1,9 @@
 #include "../native/surface-input.h"
 #include <QInputMethodEvent>
+#include <QQuickItem>
 #include <QTest>
 #include <cstdio>
+#include <functional>
 #include <vector>
 
 struct Received {
@@ -43,17 +45,103 @@ static void key(Window &window, QEvent::Type type = QEvent::KeyPress, int value 
     QKeyEvent event(type, value, Qt::ShiftModifier, text, true, 1);
     QCoreApplication::sendEvent(&window, &event);
 }
-static void activate(Window &window) {
+static void activate(QQuickWindow &window) {
     window.resize(100, 100);
     window.show();
     window.requestActivate();
     expect(QTest::qWaitForWindowActive(&window, 1000), "native window focus-in exercised");
     QCoreApplication::processEvents();
 }
+// Opaque fixture ordinals survive cloning; all keys have identical, empty data.
+class SequenceEvent final : public QKeyEvent {
+public:
+    explicit SequenceEvent(int sequence) : QKeyEvent(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier), sequence(sequence) {}
+    SequenceEvent *clone() const override { return new SequenceEvent(sequence); }
+    const int sequence;
+};
+class SequenceWindow final : public QQuickWindow {
+public:
+    std::vector<int> received;
+    std::function<void()> reenter;
+    bool event(QEvent *event) override {
+        if (auto *sequence = dynamic_cast<SequenceEvent *>(event)) {
+            received.push_back(sequence->sequence);
+            if (reenter) { auto callback = std::move(reenter); callback(); }
+            return true;
+        }
+        return QQuickWindow::event(event);
+    }
+};
+static void send(SequenceWindow &window, int sequence) {
+    SequenceEvent event(sequence);
+    QCoreApplication::sendEvent(&window, &event);
+}
+static void focusIn(SequenceWindow &window) {
+    window.contentItem()->forceActiveFocus();
+    QFocusEvent event(QEvent::FocusIn);
+    QCoreApplication::sendEvent(&window, &event);
+    QCoreApplication::processEvents();
+}
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     SurfaceInputFilter filter;
     previous = qInstallMessageHandler(messages);
+    {
+        SequenceWindow window;
+        window.setObjectName(SurfaceInputFilter::windowName());
+        send(window, 1);
+        send(window, 2);
+        window.reenter = [&] {
+            window.contentItem()->setFocus(false);
+            window.contentItem()->forceActiveFocus();
+            send(window, 3);
+        };
+        activate(window);
+        expect(window.received == std::vector<int>({1, 2, 3}), "scheduled drain keeps FIFO under ready-key reentry");
+    }
+    {
+        SequenceWindow window;
+        window.setObjectName(SurfaceInputFilter::windowName());
+        send(window, 1);
+        window.reenter = [&] {
+            send(window, 2);
+            expect(window.received == std::vector<int>({1}), "last-key reentry is queued rather than recursively delivered");
+        };
+        activate(window);
+        expect(window.received == std::vector<int>({1, 2}), "drain owns reentrant delivery even after popping its last key");
+    }
+    {
+        SequenceWindow window;
+        window.setObjectName(SurfaceInputFilter::windowName());
+        send(window, 1);
+        send(window, 2);
+        window.reenter = [&] {
+            window.contentItem()->setFocus(false);
+            send(window, 3);
+        };
+        activate(window);
+        expect(!window.activeFocusItem(), "reentrant focus loss leaves no active focus item");
+        expect(window.received == std::vector<int>({1}), "focus loss pauses the drain without passing newer keys");
+        focusIn(window);
+        expect(window.received == std::vector<int>({1, 2, 3}), "focus-in resumes the same FIFO after mid-drain focus loss");
+    }
+    {
+        SequenceWindow window;
+        window.setObjectName(SurfaceInputFilter::windowName());
+        activate(window);
+        window.contentItem()->setFocus(false);
+        send(window, 1);
+        send(window, 2);
+        window.contentItem()->forceActiveFocus();
+        window.reenter = [&] {
+            window.contentItem()->setFocus(false);
+            send(window, 4);
+        };
+        send(window, 3);
+        expect(window.received == std::vector<int>({1}), "ready-key drain cannot pass its triggering key after focus loss");
+        focusIn(window);
+        expect(window.received == std::vector<int>({1, 2, 3, 4}), "ready-key drain retains triggering and reentrant keys in FIFO order");
+    }
     {
         Window window;
         key(window);

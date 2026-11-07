@@ -39,10 +39,12 @@ protected:
         }
         if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease)
             return false;
-        if (QGuiApplication::focusWindow() == window && window->activeFocusItem()) {
-            drain(window); // a new key must not overtake the scheduled drain
+        const bool ready = QGuiApplication::focusWindow() == window && window->activeFocusItem();
+        auto found = windows.find(window);
+        // The drain owns delivery until it finishes, even while its last key
+        // is in flight. Queue before draining: replay may reenter or lose focus.
+        if (ready && (found == windows.end() || (found->second->keys.empty() && !found->second->draining)))
             return false;
-        }
         auto &state = stateFor(window);
         expire(state);
         if (state.keys.size() == maximumEvents) {
@@ -52,6 +54,7 @@ protected:
             arm(state);
         }
         event->accept();
+        if (ready) drain(window);
         return true;
     }
 
